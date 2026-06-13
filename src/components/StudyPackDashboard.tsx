@@ -4,19 +4,24 @@ import React, { useState, useEffect } from "react";
 import { 
   BookOpen, Target, BrainCircuit, HelpCircle, AlertTriangle, 
   Calendar, Download, FileDown, CheckCircle, RefreshCw, 
-  ExternalLink, ChevronRight, CheckSquare, Square, Award
+  ExternalLink, ChevronRight, CheckSquare, Square, Award,
+  Info, ListChecks, Layers, BookMarked, ArrowLeft, ArrowRight,
+  Star
 } from "lucide-react";
-import { StudyPack, ActiveRecallItem, QuizItem } from "@/utils/demoData";
+import { StudyPack, DefinitionItem, QuizItem } from "@/utils/demoData";
 import { generateMarkdown, generateAnkiCSV, downloadFile } from "@/utils/exporters";
 import confetti from "canvas-confetti";
 
 interface StudyPackDashboardProps {
   pack: StudyPack;
-  onBack: () => void;
+  examDate?: string;
+  studyGoal?: string;
+  weakAreas?: string;
+  onClear: () => void;
 }
 
-export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'courseMap' | 'examFocus' | 'activeRecall' | 'quizMe' | 'weakSpots' | 'sevenDayPlan'>('courseMap');
+export default function StudyPackDashboard({ pack, examDate, studyGoal, weakAreas, onClear }: StudyPackDashboardProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'courseMap' | 'keyConcepts' | 'examFocus' | 'activeRecall' | 'quiz' | 'flashcards' | 'sevenDayPlan' | 'weakSpots'>('overview');
   
   // Recall Mastery States
   const [masteredRecall, setMasteredRecall] = useState<Record<number, boolean>>({});
@@ -30,8 +35,20 @@ export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardP
   const [incorrectQuestions, setIncorrectQuestions] = useState<QuizItem[]>([]);
   const [quizComplete, setQuizComplete] = useState(false);
 
+  // Flashcards States
+  const [currentCardIdx, setCurrentCardIdx] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [cardDifficulties, setCardDifficulties] = useState<Record<number, 'easy' | 'medium' | 'hard'>>({});
+
   // 7-Day Plan Progress
   const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({});
+
+  // Feedback States
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [hoverRating, setHoverRating] = useState<number>(0);
+  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [feedbackMessage, setFeedbackMessage] = useState("");
 
   // Reset states when pack changes
   useEffect(() => {
@@ -43,30 +60,81 @@ export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardP
     setQuizScore(0);
     setIncorrectQuestions([]);
     setQuizComplete(false);
+    setCurrentCardIdx(0);
+    setIsFlipped(false);
+    setCardDifficulties({});
     setCompletedTasks({});
+    setFeedbackRating(0);
+    setFeedbackText("");
+    setHoverRating(0);
+    setFeedbackStatus('idle');
+    setFeedbackMessage("");
   }, [pack]);
+
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (feedbackRating === 0) {
+      alert("Please select a star rating first!");
+      return;
+    }
+    setFeedbackStatus('submitting');
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseCode: pack.courseCode,
+          rating: feedbackRating,
+          feedbackText: feedbackText,
+          correctedConcepts: {
+            courseName: pack.courseName,
+            timestamp: new Date().toISOString(),
+            feedbackText: feedbackText,
+            conceptsSample: pack.definitions.slice(0, 3).map(d => ({ term: d.term, definition: d.definition }))
+          }
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setFeedbackStatus('success');
+        setFeedbackMessage("Thank you for your feedback! Your rating and corrections will help improve the accuracy of future generated study packs.");
+        confetti({
+          particleCount: 20,
+          spread: 40,
+          colors: ['#2563eb', '#60a5fa']
+        });
+      } else {
+        throw new Error(data.message || "Failed to submit feedback.");
+      }
+    } catch (err: any) {
+      setFeedbackStatus('error');
+      setFeedbackMessage(err.message || "Failed to submit feedback. Please try again.");
+    }
+  };
 
   // Tab definitions
   const tabs = [
+    { id: "overview", label: "Overview", icon: Info },
     { id: "courseMap", label: "Course Map", icon: BookOpen },
+    { id: "keyConcepts", label: "Key Concepts", icon: BookMarked },
     { id: "examFocus", label: "Exam Focus", icon: Target },
     { id: "activeRecall", label: "Active Recall", icon: BrainCircuit },
-    { id: "quizMe", label: "Quiz Me", icon: HelpCircle },
-    { id: "weakSpots", label: "Weak Spots", icon: AlertTriangle },
+    { id: "quiz", label: "Quiz", icon: HelpCircle },
+    { id: "flashcards", label: "Flashcards", icon: Layers },
     { id: "sevenDayPlan", label: "7-Day Plan", icon: Calendar },
+    { id: "weakSpots", label: "Weak Spots", icon: AlertTriangle },
   ] as const;
 
   // Active Recall Logic
   const toggleRecallMastery = (index: number) => {
     setMasteredRecall(prev => {
       const updated = { ...prev, [index]: !prev[index] };
-      // Play a small confetti effect if master is checked
       if (updated[index]) {
         confetti({
           particleCount: 15,
           spread: 30,
           origin: { y: 0.8 },
-          colors: ['#8b5cf6', '#06b6d4']
+          colors: ['#2563eb', '#60a5fa']
         });
       }
       return updated;
@@ -96,11 +164,10 @@ export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardP
     
     if (selectedOption === currentQuestion.correctAnswer) {
       setQuizScore(prev => prev + 1);
-      // Play a mini splash
       confetti({
-        particleCount: 30,
-        spread: 60,
-        colors: ['#10b981', '#34d399']
+        particleCount: 25,
+        spread: 50,
+        colors: ['#10b981', '#60a5fa']
       });
     } else {
       setIncorrectQuestions(prev => {
@@ -118,10 +185,9 @@ export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardP
       setCurrentQuizIndex(prev => prev + 1);
     } else {
       setQuizComplete(true);
-      // Large confetti for finish!
       confetti({
-        particleCount: 80,
-        spread: 80,
+        particleCount: 60,
+        spread: 60,
         origin: { y: 0.6 }
       });
     }
@@ -133,7 +199,33 @@ export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardP
     setQuizSubmitted(false);
     setQuizScore(0);
     setQuizComplete(false);
-    // Note: we preserve incorrectQuestions as "Weak Spots" until they do a complete run
+  };
+
+  // Flashcard Actions
+  const handleCardFlip = () => {
+    setIsFlipped(!isFlipped);
+  };
+
+  const handleNextCard = () => {
+    setIsFlipped(false);
+    setTimeout(() => {
+      setCurrentCardIdx(prev => (prev + 1) % pack.definitions.length);
+    }, 150);
+  };
+
+  const handlePrevCard = () => {
+    setIsFlipped(false);
+    setTimeout(() => {
+      setCurrentCardIdx(prev => (prev - 1 + pack.definitions.length) % pack.definitions.length);
+    }, 150);
+  };
+
+  const setCardDifficulty = (level: 'easy' | 'medium' | 'hard') => {
+    setCardDifficulties(prev => ({ ...prev, [currentCardIdx]: level }));
+    // Automatically go to next card after marking
+    setTimeout(() => {
+      handleNextCard();
+    }, 400);
   };
 
   // 7-Day Plan Logic
@@ -159,835 +251,848 @@ export default function StudyPackDashboard({ pack, onBack }: StudyPackDashboardP
     downloadFile(content, `${pack.courseCode.replace(/\s+/g, "_")}_Anki_Deck.txt`, "text/plain");
   };
 
-  const handleExportPDF = () => {
-    // Triggers standard system print. CSS @media print overrides will format this nicely!
-    window.print();
-  };
-
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 md:px-6 py-6">
+    <div className="w-full space-y-5">
       
-      {/* Screen layout wrapper (hidden during printing) */}
-      <div className="print:hidden space-y-6">
+      {/* Top dashboard header info */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 text-xs font-bold font-mono tracking-wider text-blue-600 bg-blue-50 border border-blue-100 rounded">
+              {pack.courseCode}
+            </span>
+            <h2 className="text-lg font-bold text-slate-800">
+              {pack.courseName}
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">{pack.university}</p>
+        </div>
         
-        {/* Header section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
-          <div>
+        {/* Action buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportMarkdown}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-blue-500" /> Notion MD
+          </button>
+          <button
+            onClick={handleExportAnki}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-blue-500" /> Anki CSV
+          </button>
+          <button
+            onClick={onClear}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <RefreshCw className="h-3 w-3" /> New Pack
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs navigation - Pill selector in QuillBot style */}
+      <div className="bg-slate-100 p-1 rounded-xl flex overflow-x-auto scrollbar-none gap-0.5">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
             <button
-              onClick={onBack}
-              className="text-xs text-zinc-500 hover:text-violet-400 font-medium flex items-center gap-1 mb-2 hover:translate-x-[-2px] transition-all"
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                isActive
+                  ? "bg-white text-blue-600 shadow-sm border border-slate-200/50"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/40"
+              }`}
             >
-              ← Back to Dashboard
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+              {tab.id === "weakSpots" && (pack.weakSpots.length + incorrectQuestions.length) > 0 && (
+                <span className="px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-rose-100 text-rose-600">
+                  {pack.weakSpots.length + incorrectQuestions.length}
+                </span>
+              )}
             </button>
-            <div className="flex items-center gap-3">
-              <span className="px-2.5 py-1 text-xs font-bold font-mono tracking-wider text-violet-400 bg-violet-500/10 border border-violet-500/25 rounded-md">
-                {pack.courseCode}
-              </span>
-              <h1 className="text-xl md:text-2xl font-bold text-zinc-100">
-                {pack.courseName}
-              </h1>
+          );
+        })}
+      </div>
+
+      {/* Main Tabs Panel Content */}
+      <div className="min-h-[350px] animate-fade-in">
+
+        {/* Tab 1: Overview */}
+        {activeTab === "overview" && (
+          <div className="space-y-4">
+            <div className="quill-card rounded-2xl p-5 border border-slate-200">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Course Description
+              </h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {pack.summary}
+              </p>
             </div>
-            <p className="text-xs text-zinc-500 mt-1">{pack.university}</p>
-          </div>
-          
-          {/* Exporters Button Group */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              onClick={handleExportMarkdown}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-200 transition-all cursor-pointer"
-            >
-              <Download className="h-3.5 w-3.5 text-sky-400" /> Export to Notion
-            </button>
-            <button
-              onClick={handleExportAnki}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-200 transition-all cursor-pointer"
-            >
-              <Download className="h-3.5 w-3.5 text-amber-400" /> Export Anki CSV
-            </button>
-            <button
-              onClick={handleExportPDF}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-violet-600/90 hover:bg-violet-600 text-white shadow-md shadow-violet-600/10 transition-all cursor-pointer"
-            >
-              <FileDown className="h-3.5 w-3.5" /> Save PDF Study Pack
-            </button>
-          </div>
-        </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex overflow-x-auto pb-1.5 scrollbar-thin border-b border-zinc-800/40">
-          <div className="flex space-x-1.5 min-w-max">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                    isActive
-                      ? "bg-zinc-800/80 text-violet-400 border border-zinc-700/60"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 border border-transparent"
-                  }`}
-                >
-                  <Icon className={`h-4 w-4 ${isActive ? "text-violet-400" : "text-zinc-500"}`} />
-                  {tab.label}
-                  {tab.id === "weakSpots" && (pack.weakSpots.length + incorrectQuestions.length) > 0 && (
-                    <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-rose-500/10 border border-rose-500/25 text-rose-400">
-                      {pack.weakSpots.length + incorrectQuestions.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Tabs Content Router */}
-        <div className="min-h-[400px]">
-          
-          {/* Tab 1: Course Map */}
-          {activeTab === "courseMap" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="glass-panel rounded-2xl p-6 border border-zinc-800/65">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-2.5">
-                  Course Summary & Syllabus Scope
-                </h3>
-                <p className="text-sm text-zinc-300 leading-relaxed">
-                  {pack.summary}
+            {/* Custom Student Metadata Display */}
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="quill-card rounded-2xl p-4 border border-slate-200 bg-slate-50/50">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Exam Date</span>
+                <p className="text-xs font-semibold text-slate-700 mt-1">
+                  {examDate ? new Date(examDate).toLocaleDateString(undefined, { dateStyle: 'medium' }) : "Not Specified"}
                 </p>
               </div>
+              <div className="quill-card rounded-2xl p-4 border border-slate-200 bg-slate-50/50">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Target Study Goal</span>
+                <p className="text-xs font-semibold text-slate-700 mt-1 truncate">
+                  {studyGoal || "General Review & Cram"}
+                </p>
+              </div>
+              <div className="quill-card rounded-2xl p-4 border border-slate-200 bg-slate-50/50">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Focus Weak Areas</span>
+                <p className="text-xs font-semibold text-slate-750 mt-1 truncate">
+                  {weakAreas || "All Topics Coverage"}
+                </p>
+              </div>
+            </div>
 
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 px-1">
-                  Weekly Topic Structure
-                </h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {pack.courseMap.map((item, idx) => (
-                    <div 
-                      key={idx} 
-                      className="glass-panel glass-panel-hover rounded-xl p-5 border border-zinc-800/70 flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 border-b border-zinc-800/40 pb-2.5 mb-3">
-                          <span className="text-xs font-bold text-violet-400 font-mono">
-                            {item.week}
-                          </span>
-                          <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700/60">
-                            {item.weight}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-semibold text-zinc-200 mb-2">
-                          {item.topic}
-                        </h4>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {item.concepts.map((concept, cIdx) => (
-                            <span 
-                              key={cIdx}
-                              className="px-2 py-0.5 text-[11px] font-medium bg-zinc-800/40 text-zinc-400 rounded-md border border-zinc-800"
-                            >
-                              {concept}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="mt-4 pt-2 border-t border-zinc-800/20 text-[10px] text-zinc-500 text-right font-medium italic">
-                        Ref: {item.source}
-                      </div>
-                    </div>
-                  ))}
+            {/* Quick stats review */}
+            <div className="quill-card rounded-2xl p-5 border border-slate-200 space-y-3">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Study Pack Index</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                <div className="p-2 border-r border-slate-100">
+                  <span className="text-2xl font-bold text-blue-600 font-mono">{pack.courseMap.length}</span>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Topic Periods</p>
+                </div>
+                <div className="p-2 border-r border-slate-100">
+                  <span className="text-2xl font-bold text-blue-600 font-mono">{pack.definitions.length}</span>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Key Concepts</p>
+                </div>
+                <div className="p-2 border-r border-slate-100">
+                  <span className="text-2xl font-bold text-blue-600 font-mono">{pack.activeRecall.length}</span>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Active Recall Qs</p>
+                </div>
+                <div className="p-2">
+                  <span className="text-2xl font-bold text-blue-600 font-mono">{pack.quiz.length}</span>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Quiz Questions</p>
                 </div>
               </div>
             </div>
-          )}
 
-          {/* Tab 2: Exam Focus */}
-          {activeTab === "examFocus" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="bg-amber-950/20 border border-amber-800/20 rounded-2xl p-5 flex items-start gap-3.5">
-                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                  <AlertTriangle className="h-5 w-5" />
+            {/* AI Feedback & Accuracy Widget */}
+            <div className="quill-card rounded-2xl p-5 border border-slate-200 bg-white space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+                  <BrainCircuit className="h-5 w-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-amber-200">
-                    Source-Based Concept Weighting
-                  </h4>
-                  <p className="text-xs text-amber-400/80 leading-relaxed mt-1">
-                    These priority concepts are identified by cross-referencing slides frequency, assignment syllabus criteria, and rubric weights. Master these first!
+                  <h4 className="text-sm font-bold text-slate-800">Help Improve AI Accuracy</h4>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    CoursePack AI learns from your ratings and corrections. Spot a formula mistake or explanation typo? Log it below so the AI adapts for future generations.
                   </p>
                 </div>
               </div>
 
-              {/* Priority Areas */}
-              <div className="space-y-4">
-                {pack.examFocus.map((item, idx) => {
-                  const borderColors = {
-                    High: "border-l-4 border-l-rose-500 border-zinc-800/80",
-                    Medium: "border-l-4 border-l-amber-500 border-zinc-800/80",
-                    Low: "border-l-4 border-l-indigo-500 border-zinc-800/80"
-                  };
-                  const badgeColors = {
-                    High: "bg-rose-500/10 text-rose-400 border border-rose-500/25",
-                    Medium: "bg-amber-500/10 text-amber-400 border border-amber-500/25",
-                    Low: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/25"
-                  };
-                  
-                  return (
-                    <div 
-                      key={idx}
-                      className={`glass-panel rounded-2xl p-5 border ${borderColors[item.importance] || "border-zinc-800"} space-y-4`}
+              {feedbackStatus === 'success' ? (
+                <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 text-emerald-800 text-xs flex items-start gap-2.5 animate-fade-in">
+                  <CheckCircle className="h-4.5 w-4.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Feedback Received!</span>
+                    <p className="text-slate-655 mt-1 leading-relaxed">{feedbackMessage}</p>
+                    <button
+                      onClick={() => {
+                        setFeedbackStatus('idle');
+                        setFeedbackRating(0);
+                        setFeedbackText("");
+                      }}
+                      className="mt-2 font-bold text-blue-600 hover:text-blue-750 underline cursor-pointer"
                     >
-                      <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
-                        <h4 className="text-sm font-bold text-zinc-100">{item.concept}</h4>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase tracking-wider ${badgeColors[item.importance]}`}>
-                            {item.importance} Priority
-                          </span>
-                          <span className="text-[10px] text-zinc-500 font-mono bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-800">
-                            {item.source}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid md:grid-cols-3 gap-4 text-xs leading-relaxed">
-                        <div className="space-y-1">
-                          <span className="text-zinc-500 uppercase font-bold tracking-wider text-[10px]">Why it is tested:</span>
-                          <p className="text-zinc-300 font-medium">{item.explanation}</p>
-                        </div>
-                        <div className="space-y-1 md:col-span-2 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/40">
-                          <span className="text-zinc-500 uppercase font-bold tracking-wider text-[10px] text-violet-400">Likely Exam Question Pattern:</span>
-                          <p className="text-zinc-200 font-mono mt-1 whitespace-pre-line leading-relaxed">{item.likelyQuestion}</p>
-                        </div>
-                      </div>
-
-                      <div className="pt-3 border-t border-zinc-800/40 flex items-center justify-between text-xs">
-                        <p className="text-zinc-400 italic">
-                          <strong className="text-violet-400 font-semibold uppercase text-[10px] tracking-wider not-italic mr-1.5">Pro Tip:</strong> 
-                          {item.tips}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {/* Definitions and Formulas Summary Grid */}
-              <div className="space-y-4 pt-2">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 px-1">
-                  Essential Definitions & Formulas
-                </h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {pack.definitions.map((def, idx) => (
-                    <div key={idx} className="glass-panel rounded-xl p-4.5 border border-zinc-800/60 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-xs font-bold text-violet-300">{def.term}</h4>
-                          <span className="text-[9px] font-mono text-zinc-500">{def.source}</span>
-                        </div>
-                        <p className="text-xs text-zinc-300 mb-2 leading-relaxed">{def.definition}</p>
-                        {def.formula && (
-                          <div className="mt-2.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800 font-mono text-[11px] text-emerald-400 break-all">
-                            {def.formula}
-                          </div>
-                        )}
-                        {def.confusionPoint && (
-                          <div className="mt-2.5 text-[11px] text-rose-400 bg-rose-500/5 p-2 rounded-lg border border-rose-500/10">
-                            <span className="font-bold uppercase text-[9px] tracking-wider block mb-0.5">Common Trap:</span>
-                            {def.confusionPoint}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 3: Active Recall */}
-          {activeTab === "activeRecall" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800/80 rounded-2xl p-5">
-                <div>
-                  <h4 className="text-sm font-bold text-zinc-200">Active Recall Mastery</h4>
-                  <p className="text-xs text-zinc-500 mt-1">Review the questions, recall the answers, then test yourself.</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-xl font-bold font-mono text-violet-400">
-                    {masteredCount} <span className="text-zinc-500 text-xs">/ {pack.activeRecall.length}</span>
-                  </span>
-                  <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden mt-1.5 border border-zinc-800">
-                    <div className="h-full bg-violet-500 transition-all duration-300" style={{ width: `${recallPercentage}%` }} />
+                      Submit another feedback
+                    </button>
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-3">
-                {pack.activeRecall.map((item, idx) => {
-                  const isMastered = masteredRecall[idx] || false;
-                  const isRevealed = revealedRecall[idx] || false;
-
-                  return (
-                    <div 
-                      key={idx}
-                      className={`border rounded-xl transition-all duration-200 ${
-                        isMastered 
-                          ? "bg-zinc-900/20 border-emerald-500/20 opacity-75" 
-                          : isRevealed
-                          ? "bg-zinc-900/50 border-zinc-700/60"
-                          : "bg-zinc-900/40 border-zinc-800/80 hover:border-zinc-700"
-                      }`}
-                    >
-                      {/* Accordion Trigger */}
-                      <div 
-                        onClick={() => toggleAnswerReveal(idx)}
-                        className="flex items-center justify-between p-4 cursor-pointer select-none"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 pr-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleRecallMastery(idx);
-                            }}
-                            className={`p-1.5 rounded-lg border transition-all ${
-                              isMastered 
-                                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
-                                : "bg-zinc-800 border-zinc-700 hover:border-zinc-500 text-zinc-400"
-                            }`}
-                          >
-                            <CheckSquare className={`h-4.5 w-4.5 ${isMastered ? "block" : "hidden"}`} />
-                            <Square className={`h-4.5 w-4.5 ${isMastered ? "hidden" : "block"}`} />
-                          </button>
-                          
-                          <div className="min-w-0">
-                            <span className="text-xs text-zinc-500 font-mono font-bold block uppercase tracking-wider mb-0.5">
-                              Question {idx + 1}
-                            </span>
-                            <h4 className="text-sm font-semibold text-zinc-200 truncate pr-6">
-                              {item.question}
-                            </h4>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-3">
-                          <span className="hidden sm:inline-block text-[10px] text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded font-mono border border-zinc-800">
-                            {item.source}
-                          </span>
-                          <ChevronRight className={`h-4.5 w-4.5 text-zinc-500 transition-transform duration-200 ${isRevealed ? "rotate-90" : ""}`} />
-                        </div>
-                      </div>
-
-                      {/* Accordion Content */}
-                      {isRevealed && (
-                        <div className="px-12 pb-4 pt-1 border-t border-zinc-800/40 space-y-3.5 animate-slide-down">
-                          <div className="space-y-1">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-amber-500/80">Hint:</span>
-                            <p className="text-xs text-amber-300/90 italic">{item.hint}</p>
-                          </div>
-                          
-                          <div className="space-y-1 bg-zinc-950 p-4 rounded-xl border border-zinc-850">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-violet-400">Answer:</span>
-                            <p className="text-xs md:text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mt-1">
-                              {item.answer}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Tab 4: Quiz Me */}
-          {activeTab === "quizMe" && (
-            <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-              {!quizComplete ? (
-                <div className="glass-panel rounded-2xl p-6 border border-zinc-800/80 space-y-5">
-                  
-                  {/* Progress Header */}
-                  <div className="flex items-center justify-between border-b border-zinc-850 pb-3">
-                    <span className="text-xs font-bold font-mono text-zinc-500 uppercase">
-                      Question {currentQuizIndex + 1} of {pack.quiz.length}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-violet-400 bg-violet-500/10 px-2.5 py-0.5 rounded border border-violet-500/20">
-                      Score: {quizScore}
-                    </span>
-                  </div>
-
-                  {/* Question */}
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-mono font-bold text-zinc-500 uppercase tracking-widest block">
-                      Ref: {pack.quiz[currentQuizIndex].source}
-                    </span>
-                    <h3 className="text-base font-semibold text-zinc-200 leading-relaxed">
-                      {pack.quiz[currentQuizIndex].question}
-                    </h3>
-                  </div>
-
-                  {/* Options */}
-                  <div className="space-y-2.5">
-                    {pack.quiz[currentQuizIndex].options.map((option, idx) => {
-                      const isSelected = selectedOption === idx;
-                      const isCorrect = idx === pack.quiz[currentQuizIndex].correctAnswer;
-                      
-                      let btnStyle = "bg-zinc-900/40 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/60";
-                      
-                      if (quizSubmitted) {
-                        if (isCorrect) {
-                          btnStyle = "bg-emerald-500/10 border-emerald-500/50 text-emerald-300 font-medium";
-                        } else if (isSelected) {
-                          btnStyle = "bg-rose-500/10 border-rose-500/50 text-rose-300 font-medium";
-                        } else {
-                          btnStyle = "bg-zinc-900/20 border-zinc-900 text-zinc-600 opacity-60";
-                        }
-                      } else if (isSelected) {
-                        btnStyle = "bg-violet-500/15 border-violet-500/60 text-violet-200 font-medium";
-                      }
-
-                      return (
+              ) : (
+                <form onSubmit={handleSubmitFeedback} className="space-y-4">
+                  {/* Rating Selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500">Rate this pack:</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
                         <button
-                          key={idx}
-                          disabled={quizSubmitted}
-                          onClick={() => handleOptionSelect(idx)}
-                          className={`w-full text-left p-3.5 rounded-xl border text-xs leading-relaxed transition-all cursor-pointer ${btnStyle}`}
+                          key={star}
+                          type="button"
+                          onClick={() => setFeedbackRating(star)}
+                          onMouseEnter={() => setHoverRating(star)}
+                          onMouseLeave={() => setHoverRating(0)}
+                          className="p-1 rounded hover:scale-110 active:scale-95 transition-transform text-slate-300 cursor-pointer"
                         >
-                          <div className="flex items-start gap-3">
-                            <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold border mt-0.5 shrink-0 ${
-                              isSelected 
-                                ? "bg-violet-500 text-white border-violet-500" 
-                                : "bg-zinc-800 border-zinc-700 text-zinc-400"
-                            }`}>
-                              {String.fromCharCode(65 + idx)}
-                            </span>
-                            <span className="pr-4">{option}</span>
-                          </div>
+                          <Star
+                            className={`h-5 w-5 transition-colors ${
+                              star <= (hoverRating || feedbackRating)
+                                ? "fill-amber-400 text-amber-400"
+                                : "text-slate-300"
+                            }`}
+                          />
                         </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Submit / Next Actions */}
-                  <div className="flex justify-end pt-3 border-t border-zinc-850">
-                    {!quizSubmitted ? (
-                      <button
-                        disabled={selectedOption === null}
-                        onClick={handleQuizSubmit}
-                        className={`px-5 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
-                          selectedOption === null
-                            ? "bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-800"
-                            : "bg-violet-600 hover:bg-violet-500 text-white shadow-md shadow-violet-600/10"
-                        }`}
-                      >
-                        Submit Answer
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleQuizNext}
-                        className="px-5 py-2.5 text-xs font-semibold rounded-xl bg-violet-600 hover:bg-violet-500 text-white shadow-md shadow-violet-600/10 transition-all cursor-pointer"
-                      >
-                        {currentQuizIndex + 1 < pack.quiz.length ? "Next Question →" : "See Results"}
-                      </button>
+                      ))}
+                    </div>
+                    {feedbackRating > 0 && (
+                      <span className="text-xs font-bold text-slate-600 animate-fade-in">
+                        {feedbackRating === 5 ? "Excellent!" : feedbackRating === 4 ? "Very Good" : feedbackRating === 3 ? "Good" : feedbackRating === 2 ? "Needs Improvement" : "Poor"}
+                      </span>
                     )}
                   </div>
 
-                  {/* Feedback Explanation */}
-                  {quizSubmitted && (
-                    <div className={`p-4 rounded-xl border leading-relaxed animate-slide-up ${
-                      selectedOption === pack.quiz[currentQuizIndex].correctAnswer
-                        ? "bg-emerald-500/5 border-emerald-500/10 text-emerald-400"
-                        : "bg-rose-500/5 border-rose-500/10 text-rose-400"
-                    }`}>
-                      <span className="font-bold uppercase text-[9px] tracking-wider block mb-1">
-                        {selectedOption === pack.quiz[currentQuizIndex].correctAnswer ? "✓ Correct!" : "✗ Incorrect"}
-                      </span>
-                      <p className="text-xs text-zinc-300">
-                        {pack.quiz[currentQuizIndex].explanation}
-                      </p>
-                    </div>
+                  {/* Written Correction details */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Explain Corrections or Suggested Improvements
+                    </label>
+                    <textarea
+                      value={feedbackText}
+                      onChange={(e) => setFeedbackText(e.target.value)}
+                      placeholder="e.g. In the Key Concepts tab, the formula for Lagrange error has a sign typo, or page 2 CS 136 mapping missed the final recursion topic."
+                      rows={3}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-blue-400 focus:outline-none rounded-xl p-3 text-xs text-slate-700 font-sans leading-relaxed resize-none"
+                    />
+                  </div>
+
+                  {feedbackStatus === 'error' && (
+                    <p className="text-xs text-rose-600 font-medium">{feedbackMessage}</p>
                   )}
 
-                </div>
-              ) : (
-                /* Quiz Complete Score Card */
-                <div className="glass-panel rounded-2xl p-8 border border-zinc-800/80 text-center space-y-6">
-                  <div className="mx-auto w-16 h-16 flex items-center justify-center rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 animate-bounce">
-                    <Award className="h-8 w-8" />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-bold text-zinc-200">Quiz Completed!</h3>
-                    <p className="text-xs text-zinc-500">Practice tests reinforce retention. Take it again to reach 100%.</p>
-                  </div>
-
-                  <div className="inline-block bg-zinc-900 border border-zinc-850 px-6 py-4 rounded-2xl">
-                    <span className="text-3xl font-extrabold font-mono text-violet-400">
-                      {quizScore} <span className="text-zinc-500 text-sm font-normal">/ {pack.quiz.length}</span>
-                    </span>
-                    <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold mt-1">
-                      {Math.round((quizScore / pack.quiz.length) * 100)}% Accuracy
-                    </p>
-                  </div>
-
-                  {incorrectQuestions.length > 0 && (
-                    <div className="text-left bg-rose-500/5 border border-rose-500/10 rounded-xl p-4 space-y-2">
-                      <span className="text-xs font-bold text-rose-400 flex items-center gap-1">
-                        <AlertTriangle className="h-4 w-4" /> Added to Weak Spots
-                      </span>
-                      <p className="text-[11px] text-zinc-400">
-                        The {incorrectQuestions.length} question(s) you missed have been compiled in the <strong>Weak Spots</strong> tab for targeted review.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="pt-2 flex items-center justify-center gap-3">
+                  <div className="flex justify-end">
                     <button
-                      onClick={restartQuiz}
-                      className="px-5 py-2.5 text-xs font-semibold rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-200 transition-all cursor-pointer flex items-center gap-1.5"
+                      type="submit"
+                      disabled={feedbackRating === 0 || feedbackStatus === 'submitting'}
+                      className={`px-4 py-2 text-xs font-bold rounded-lg transition-all active:scale-[0.98] cursor-pointer ${
+                        feedbackRating === 0 || feedbackStatus === 'submitting'
+                          ? "bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed"
+                          : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                      }`}
                     >
-                      <RefreshCw className="h-3.5 w-3.5" /> Retake Quiz
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("weakSpots")}
-                      className="px-5 py-2.5 text-xs font-semibold rounded-xl bg-violet-600 hover:bg-violet-500 text-white shadow-md shadow-violet-600/10 transition-all cursor-pointer"
-                    >
-                      Check Weak Spots
+                      {feedbackStatus === 'submitting' ? "Submitting..." : "Submit AI Corrections"}
                     </button>
                   </div>
-                </div>
+                </form>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Tab 5: Weak Spots */}
-          {activeTab === "weakSpots" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="glass-panel rounded-2xl p-6 border border-zinc-800/80 space-y-4">
-                <div className="border-b border-zinc-800/50 pb-3">
-                  <h3 className="text-sm font-bold text-zinc-200">Knowledge Gaps Identifier</h3>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Gaps identified from syllabus weight discrepancies, missed quiz questions, or rubric check items.
+        {/* Tab 2: Course Map */}
+        {activeTab === "courseMap" && (
+          <div className="space-y-4">
+            <div className="grid gap-3.5">
+              {pack.courseMap.map((item, idx) => (
+                <div key={idx} className="quill-card quill-card-hover rounded-xl p-4.5 border border-slate-250 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded">
+                        {item.week}
+                      </span>
+                      <h4 className="text-sm font-bold text-slate-800">{item.topic}</h4>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {item.concepts.map((concept, cIdx) => (
+                        <span key={cIdx} className="px-2 py-0.2 text-[10px] font-medium bg-slate-100 text-slate-500 rounded border border-slate-150">
+                          {concept}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-col items-end justify-between gap-1 border-t sm:border-t-0 border-slate-100 pt-2 sm:pt-0 shrink-0">
+                    <span className="text-[10px] font-bold text-slate-400 font-mono uppercase bg-slate-50 px-2 py-0.5 rounded border border-slate-200">{item.weight}</span>
+                    <span className="text-[9px] text-slate-400 italic">Ref: {item.source}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Key Concepts */}
+        {activeTab === "keyConcepts" && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {pack.definitions.map((def, idx) => (
+              <div key={idx} className="quill-card rounded-xl p-4.5 border border-slate-200 flex flex-col justify-between space-y-3">
+                <div>
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2 mb-2">
+                    <h4 className="text-xs font-bold text-blue-600">{def.term}</h4>
+                    <span className="text-[9px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.2 rounded border border-slate-150">{def.source}</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">{def.definition}</p>
+                </div>
+
+                {def.formula && (
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-150 font-mono text-[10px] text-blue-600 break-all">
+                    {def.formula}
+                  </div>
+                )}
+                
+                {def.confusionPoint && (
+                  <div className="text-[10px] text-rose-600 bg-rose-50/50 p-2.5 rounded-lg border border-rose-100">
+                    <span className="font-bold uppercase text-[9px] tracking-wider block mb-0.5">Common Misconception:</span>
+                    {def.confusionPoint}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tab 4: Exam Focus */}
+        {activeTab === "examFocus" && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+              <div className="p-1.5 rounded-lg bg-blue-100 text-blue-600 mt-0.5 shrink-0">
+                <Info className="h-4 w-4" />
+              </div>
+              <div className="text-xs">
+                <h4 className="font-bold text-blue-900">Priority Exam Insights</h4>
+                <p className="text-blue-700 leading-normal mt-0.5">
+                  AI extracted exam directions based on syllabus rubrics, lecture importance indicators, and repeated assignments.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3.5">
+              {pack.examFocus.map((item, idx) => {
+                const borderColors = {
+                  High: "border-l-4 border-l-rose-500",
+                  Medium: "border-l-4 border-l-amber-500",
+                  Low: "border-l-4 border-l-blue-500"
+                };
+                const badgeColors = {
+                  High: "bg-rose-50 text-rose-600 border border-rose-100",
+                  Medium: "bg-amber-50 text-amber-600 border border-amber-100",
+                  Low: "bg-blue-50 text-blue-600 border border-blue-100"
+                };
+
+                return (
+                  <div key={idx} className={`quill-card rounded-xl p-5 border border-slate-200 ${borderColors[item.importance] || ""}`}>
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2.5 mb-3">
+                      <h4 className="text-sm font-bold text-slate-800">{item.concept}</h4>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded uppercase tracking-wider ${badgeColors[item.importance]}`}>
+                          {item.importance}
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono bg-slate-50 px-1.5 py-0.2 rounded border border-slate-150">{item.source}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-xs">
+                        <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Why it's tested</span>
+                        <p className="text-slate-600 mt-0.5 leading-relaxed">{item.explanation}</p>
+                      </div>
+                      
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150 text-xs">
+                        <span className="text-blue-600 font-bold uppercase text-[9px] tracking-wide block mb-1">Expected Question Pattern</span>
+                        <p className="text-slate-750 font-mono whitespace-pre-line leading-relaxed">{item.likelyQuestion}</p>
+                      </div>
+
+                      <div className="text-xs pt-1">
+                        <span className="text-emerald-600 font-bold uppercase text-[9px] tracking-wide">Preparation Strategy</span>
+                        <p className="text-slate-600 mt-0.5 italic">{item.tips}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Active Recall */}
+        {activeTab === "activeRecall" && (
+          <div className="space-y-4">
+            
+            {/* Progress block */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between text-xs">
+              <div>
+                <h4 className="font-bold text-slate-700">Active Recall Testing</h4>
+                <p className="text-slate-500">Mastered: {masteredCount} of {pack.activeRecall.length}</p>
+              </div>
+              <div className="w-28 h-2 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+                <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${recallPercentage}%` }} />
+              </div>
+            </div>
+
+            {/* Q&A Accordion list */}
+            <div className="space-y-2.5">
+              {pack.activeRecall.map((item, idx) => {
+                const isMastered = masteredRecall[idx] || false;
+                const isRevealed = revealedRecall[idx] || false;
+
+                return (
+                  <div 
+                    key={idx}
+                    className={`border rounded-xl transition-all duration-150 ${
+                      isMastered 
+                        ? "bg-emerald-50/10 border-emerald-250 opacity-80"
+                        : isRevealed
+                        ? "bg-white border-slate-300"
+                        : "bg-white border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <div 
+                      onClick={() => toggleAnswerReveal(idx)}
+                      className="flex items-center justify-between p-3.5 cursor-pointer select-none"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 pr-4">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleRecallMastery(idx);
+                          }}
+                          className={`p-1 rounded transition-colors ${
+                            isMastered 
+                              ? "text-emerald-600" 
+                              : "text-slate-400 hover:text-slate-600"
+                          }`}
+                        >
+                          {isMastered ? <CheckSquare className="h-4.5 w-4.5" /> : <Square className="h-4.5 w-4.5" />}
+                        </button>
+                        
+                        <div className="min-w-0">
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Question {idx + 1}</span>
+                          <h4 className="text-xs md:text-sm font-semibold text-slate-800 truncate">{item.question}</h4>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="hidden sm:inline-block text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.2 rounded border border-slate-150 font-mono">
+                          {item.source}
+                        </span>
+                        <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isRevealed ? "rotate-90" : ""}`} />
+                      </div>
+                    </div>
+
+                    {isRevealed && (
+                      <div className="px-10 pb-4 pt-1.5 border-t border-slate-100 space-y-3.5">
+                        <div className="text-xs">
+                          <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">Clue Hint:</span>
+                          <p className="text-slate-500 italic mt-0.5">{item.hint}</p>
+                        </div>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs md:text-sm">
+                          <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block mb-1">Response:</span>
+                          <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{item.answer}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 6: Quiz */}
+        {activeTab === "quiz" && (
+          <div className="max-w-xl mx-auto space-y-4">
+            {!quizComplete ? (
+              <div className="quill-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-4">
+                
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2 text-xs">
+                  <span className="font-bold text-slate-400 uppercase">Question {currentQuizIndex + 1} of {pack.quiz.length}</span>
+                  <span className="px-2 py-0.5 font-bold font-mono text-blue-600 bg-blue-50 border border-blue-100 rounded">Score: {quizScore}</span>
+                </div>
+
+                {/* Question */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-mono text-slate-400 italic">Source: {pack.quiz[currentQuizIndex].source}</span>
+                  <h3 className="text-sm md:text-base font-bold text-slate-850 leading-relaxed">{pack.quiz[currentQuizIndex].question}</h3>
+                </div>
+
+                {/* Options list */}
+                <div className="space-y-2">
+                  {pack.quiz[currentQuizIndex].options.map((option, idx) => {
+                    const isSelected = selectedOption === idx;
+                    const isCorrect = idx === pack.quiz[currentQuizIndex].correctAnswer;
+                    
+                    let style = "bg-white border-slate-200 text-slate-650 hover:bg-slate-50 hover:border-slate-350";
+                    
+                    if (quizSubmitted) {
+                      if (isCorrect) {
+                        style = "bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold";
+                      } else if (isSelected) {
+                        style = "bg-rose-50 border-rose-300 text-rose-800 font-semibold";
+                      } else {
+                        style = "bg-slate-50/50 border-slate-150 text-slate-400 opacity-60";
+                      }
+                    } else if (isSelected) {
+                      style = "bg-blue-50/60 border-blue-400 text-blue-800 font-semibold";
+                    }
+
+                    return (
+                      <button
+                        key={idx}
+                        disabled={quizSubmitted}
+                        onClick={() => handleOptionSelect(idx)}
+                        className={`w-full text-left p-3.5 rounded-xl border text-xs transition-all cursor-pointer ${style}`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold border shrink-0 mt-0.5 ${
+                            isSelected 
+                              ? "bg-blue-600 text-white border-blue-600" 
+                              : "bg-slate-100 border-slate-200 text-slate-500"
+                          }`}>
+                            {String.fromCharCode(65 + idx)}
+                          </span>
+                          <span>{option}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  {!quizSubmitted ? (
+                    <button
+                      disabled={selectedOption === null}
+                      onClick={handleQuizSubmit}
+                      className={`px-4.5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                        selectedOption === null
+                          ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200"
+                          : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                      }`}
+                    >
+                      Submit Answer
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleQuizNext}
+                      className="px-4.5 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors cursor-pointer"
+                    >
+                      {currentQuizIndex + 1 < pack.quiz.length ? "Next Question →" : "See Summary"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Explanation feedback */}
+                {quizSubmitted && (
+                  <div className={`p-3.5 rounded-xl border text-xs leading-relaxed animate-fade-in ${
+                    selectedOption === pack.quiz[currentQuizIndex].correctAnswer
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                      : "bg-rose-50 border-rose-200 text-rose-800"
+                  }`}>
+                    <span className="font-bold uppercase text-[9px] tracking-wider block mb-0.5">
+                      {selectedOption === pack.quiz[currentQuizIndex].correctAnswer ? "✓ Correct Answer" : "✗ Incorrect Answer"}
+                    </span>
+                    <p className="text-slate-650">{pack.quiz[currentQuizIndex].explanation}</p>
+                  </div>
+                )}
+
+              </div>
+            ) : (
+              /* Quiz Finished Summary */
+              <div className="quill-card rounded-2xl p-6 border border-slate-200 text-center space-y-5">
+                <div className="mx-auto w-12 h-12 flex items-center justify-center rounded-full bg-blue-50 border border-blue-100 text-blue-600">
+                  <Award className="h-6 w-6" />
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-slate-800">Practice Quiz Complete</h4>
+                  <p className="text-xs text-slate-500">Test results help isolate concept weak spots automatically.</p>
+                </div>
+
+                <div className="inline-block bg-slate-50 border border-slate-200 px-5 py-3.5 rounded-xl">
+                  <span className="text-2xl font-extrabold font-mono text-blue-600">
+                    {quizScore} <span className="text-slate-400 text-xs font-normal">/ {pack.quiz.length}</span>
+                  </span>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                    {Math.round((quizScore / pack.quiz.length) * 100)}% Correct
                   </p>
                 </div>
 
-                <div className="space-y-4">
-                  {/* Standard Weak spots generated from files */}
-                  {pack.weakSpots.map((item, idx) => (
-                    <div 
-                      key={`file-weak-${idx}`}
-                      className="p-4 rounded-xl border bg-zinc-950/40 border-rose-500/10 hover:border-rose-500/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                          <h4 className="text-sm font-semibold text-zinc-200">{item.concept}</h4>
-                          <span className="text-[9px] font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-850">
-                            {item.source}
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-400 pl-3.5 leading-relaxed">{item.coverage}</p>
-                      </div>
-                      
-                      <div className="shrink-0 bg-rose-500/5 border border-rose-500/10 rounded-lg p-2.5 md:max-w-xs">
-                        <span className="text-[9px] uppercase font-extrabold tracking-wider text-rose-400 block mb-0.5">Action Plan:</span>
-                        <p className="text-xs text-zinc-300 leading-relaxed">{item.action}</p>
-                      </div>
-                    </div>
-                  ))}
+                {incorrectQuestions.length > 0 && (
+                  <div className="text-left bg-rose-50 border border-rose-100 rounded-xl p-3.5 space-y-1 text-xs">
+                    <span className="font-bold text-rose-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" /> Weak Spots Updated
+                    </span>
+                    <p className="text-slate-500 text-[11px]">
+                      {incorrectQuestions.length} missed question(s) added to the **Weak Spots** tab for self-assessment.
+                    </p>
+                  </div>
+                )}
 
-                  {/* Incorrect quiz items integrated on the fly */}
-                  {incorrectQuestions.map((q, idx) => (
-                    <div 
-                      key={`quiz-weak-${idx}`}
-                      className="p-4 rounded-xl border bg-zinc-950/40 border-amber-500/10 hover:border-amber-500/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          <h4 className="text-sm font-semibold text-zinc-200">Concept: Quiz Error</h4>
-                          <span className="text-[9px] font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-850">
-                            {q.source}
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-400 pl-3.5 leading-relaxed truncate pr-6">
-                          Missed question: "{q.question}"
-                        </p>
-                      </div>
-                      
-                      <div className="shrink-0 bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 md:max-w-xs">
-                        <span className="text-[9px] uppercase font-extrabold tracking-wider text-amber-400 block mb-0.5">Action Plan:</span>
-                        <p className="text-xs text-zinc-300 leading-relaxed">
-                          Review why correct answer was option {q.correctAnswer + 1}. {q.explanation}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-
-                  {pack.weakSpots.length === 0 && incorrectQuestions.length === 0 && (
-                    <div className="text-center py-8 space-y-2">
-                      <div className="mx-auto w-10 h-10 flex items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
-                        <CheckCircle className="h-5 w-5" />
-                      </div>
-                      <h4 className="text-sm font-semibold text-zinc-200">No Weak Spots Found!</h4>
-                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                        Amazing. Keep practicing the Active Recall questions and Quiz to test your mastery.
-                      </p>
-                    </div>
-                  )}
+                <div className="flex justify-center gap-2">
+                  <button
+                    onClick={restartQuiz}
+                    className="px-4 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Retake Quiz
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("weakSpots")}
+                    className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors cursor-pointer"
+                  >
+                    View Weak Spots
+                  </button>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 7: Flashcards (New 3D Flipping Experience) */}
+        {activeTab === "flashcards" && (
+          <div className="max-w-md mx-auto space-y-5 text-center">
+            
+            {/* Card Counter Progress */}
+            <div className="text-xs text-slate-500 flex items-center justify-between px-1">
+              <span>Key Concept Flashcards</span>
+              <span className="font-bold font-mono text-slate-700">Card {currentCardIdx + 1} of {pack.definitions.length}</span>
+            </div>
+
+            {/* 3D Flipping Card Container */}
+            <div 
+              onClick={handleCardFlip}
+              className="w-full h-64 cursor-pointer perspective-1000 select-none group"
+            >
+              <div className={`relative w-full h-full duration-300 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
+                
+                {/* Front Side */}
+                <div className="absolute inset-0 w-full h-full bg-white border border-slate-200/80 rounded-2xl shadow-sm hover:shadow-md hover:border-slate-350 transition-all flex flex-col justify-between p-6 backface-hidden">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-left">
+                    Concept Definition Front
+                  </span>
+                  
+                  <div className="text-center py-4">
+                    <h3 className="text-base font-bold text-blue-600 font-sans tracking-tight leading-snug">
+                      {pack.definitions[currentCardIdx].term}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-2 font-mono italic">
+                      Source: {pack.definitions[currentCardIdx].source}
+                    </p>
+                  </div>
+
+                  <span className="text-[10px] text-slate-400/80 font-medium">
+                    Click card to reveal definition
+                  </span>
+                </div>
+
+                {/* Back Side */}
+                <div className="absolute inset-0 w-full h-full bg-blue-50/50 border border-blue-200 rounded-2xl shadow-sm flex flex-col justify-between p-6 backface-hidden rotate-y-180">
+                  <div className="text-left space-y-3.5 overflow-y-auto max-h-[180px] pr-1">
+                    <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest block">
+                      Answer Back
+                    </span>
+                    
+                    <div className="space-y-2">
+                      <p className="text-xs md:text-sm text-slate-700 font-medium leading-relaxed">
+                        {pack.definitions[currentCardIdx].definition}
+                      </p>
+                      
+                      {pack.definitions[currentCardIdx].formula && (
+                        <div className="bg-white p-2 border border-blue-100 rounded font-mono text-[10px] text-blue-700 break-all">
+                          {pack.definitions[currentCardIdx].formula}
+                        </div>
+                      )}
+
+                      {pack.definitions[currentCardIdx].confusionPoint && (
+                        <div className="bg-rose-50/60 p-2.5 rounded border border-rose-100 text-[10px] text-rose-700">
+                          <strong className="block mb-0.5 uppercase tracking-wide text-[8px]">Don't get tricked:</strong>
+                          {pack.definitions[currentCardIdx].confusionPoint}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] text-blue-400/80 font-medium">
+                    Click card to view front
+                  </span>
+                </div>
+
               </div>
             </div>
-          )}
 
-          {/* Tab 6: 7-Day Plan */}
-          {activeTab === "sevenDayPlan" && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800/80 rounded-2xl p-5">
-                <div>
-                  <h4 className="text-sm font-bold text-zinc-200">7-Day Study Progress</h4>
-                  <p className="text-xs text-zinc-500 mt-1">Daily structured checklists leading up to exam day.</p>
+            {/* Marking difficulties and navigation buttons */}
+            <div className="space-y-4">
+              
+              {/* Difficulty selectors */}
+              {isFlipped && (
+                <div className="flex justify-center gap-2 animate-fade-in">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setCardDifficulty('easy'); }}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                      cardDifficulties[currentCardIdx] === 'easy'
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50"
+                    }`}
+                  >
+                    Easy
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setCardDifficulty('medium'); }}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                      cardDifficulties[currentCardIdx] === 'medium'
+                        ? "bg-amber-500 text-white border-amber-500"
+                        : "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100/50"
+                    }`}
+                  >
+                    Medium
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setCardDifficulty('hard'); }}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                      cardDifficulties[currentCardIdx] === 'hard'
+                        ? "bg-rose-500 text-white border-rose-500"
+                        : "bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100/50"
+                    }`}
+                  >
+                    Hard
+                  </button>
                 </div>
-                <div className="text-right">
-                  <span className="text-xl font-bold font-mono text-violet-400">
-                    {completedTasksCount} <span className="text-zinc-500 text-xs">/ {totalTasksCount}</span>
-                  </span>
-                  <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden mt-1.5 border border-zinc-800">
-                    <div className="h-full bg-violet-500 transition-all duration-300" style={{ width: `${cramProgressPercentage}%` }} />
-                  </div>
-                </div>
+              )}
+
+              {/* Navigation Carousel Buttons */}
+              <div className="flex items-center justify-between px-2 pt-1">
+                <button
+                  onClick={handlePrevCard}
+                  className="p-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-full transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                
+                <span className="text-[10px] text-slate-400">
+                  {cardDifficulties[currentCardIdx] ? (
+                    <span className="capitalize font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      Marked: {cardDifficulties[currentCardIdx]}
+                    </span>
+                  ) : "Self-test before exam day"}
+                </span>
+
+                <button
+                  onClick={handleNextCard}
+                  className="p-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-full transition-colors cursor-pointer"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
 
-              {/* Day Cards */}
-              <div className="space-y-4">
-                {pack.sevenDayPlan.map((dayPlan) => (
-                  <div 
-                    key={dayPlan.day}
-                    className="glass-panel rounded-2xl p-5 border border-zinc-800/60 grid md:grid-cols-4 gap-4"
-                  >
-                    {/* Left details */}
-                    <div className="md:border-r md:border-zinc-800/60 md:pr-4 flex flex-col justify-center">
-                      <span className="text-xs font-mono font-bold text-violet-400 uppercase tracking-wider">
-                        Day {dayPlan.day}
-                      </span>
-                      <h4 className="text-sm font-bold text-zinc-200 mt-1 leading-snug">
-                        {dayPlan.focus}
-                      </h4>
+            </div>
+
+          </div>
+        )}
+
+        {/* Tab 8: 7-Day Plan */}
+        {activeTab === "sevenDayPlan" && (
+          <div className="space-y-4">
+            
+            {/* Progress Checklist bar */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between text-xs">
+              <div>
+                <h4 className="font-bold text-slate-700">Cram Schedule Progress</h4>
+                <p className="text-slate-500">Tasks Complete: {completedTasksCount} of {totalTasksCount}</p>
+              </div>
+              <div className="w-28 h-2 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+                <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${cramProgressPercentage}%` }} />
+              </div>
+            </div>
+
+            {/* Days block list */}
+            <div className="space-y-3.5">
+              {pack.sevenDayPlan.map((dayPlan) => (
+                <div key={dayPlan.day} className="quill-card rounded-xl p-4.5 border border-slate-200 grid md:grid-cols-4 gap-3.5">
+                  <div className="md:border-r border-slate-100 md:pr-4 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold font-mono text-blue-600 uppercase">Day {dayPlan.day}</span>
+                    <h4 className="text-xs md:text-sm font-bold text-slate-800 leading-snug mt-1">{dayPlan.focus}</h4>
+                  </div>
+
+                  <div className="md:col-span-3 space-y-1.5">
+                    {dayPlan.tasks.map((task, tIdx) => {
+                      const key = `${dayPlan.day}-${tIdx}`;
+                      const isDone = completedTasks[key] || false;
+                      return (
+                        <div 
+                          key={tIdx}
+                          onClick={() => toggleTask(dayPlan.day, tIdx)}
+                          className={`flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer select-none text-xs leading-normal ${
+                            isDone 
+                              ? "bg-slate-50 border-slate-150 opacity-60 text-slate-400"
+                              : "bg-white border-slate-150 hover:border-slate-250 text-slate-750"
+                          }`}
+                        >
+                          <button className={`shrink-0 mt-0.5 transition-colors ${isDone ? "text-emerald-500" : "text-slate-400"}`}>
+                            {isDone ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                          </button>
+                          <span className={isDone ? "line-through" : ""}>{task}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 9: Weak Spots */}
+        {activeTab === "weakSpots" && (
+          <div className="space-y-4">
+            <div className="quill-card rounded-2xl p-5 border border-slate-200 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2">
+                Knowledge Remediation Panel
+              </h3>
+
+              <div className="space-y-3">
+                {/* Standard weak spots from JSON */}
+                {pack.weakSpots.map((item, idx) => (
+                  <div key={`file-w-${idx}`} className="p-4 rounded-xl border border-rose-100 bg-rose-50/20 hover:border-rose-200 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs leading-relaxed">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                        <h4 className="font-bold text-slate-800 truncate">{item.concept}</h4>
+                        <span className="text-[9px] font-mono text-slate-400 bg-slate-50 px-1 py-0.2 rounded border border-slate-150 shrink-0">{item.source}</span>
+                      </div>
+                      <p className="text-slate-500 pl-3 leading-normal">{item.coverage}</p>
                     </div>
 
-                    {/* Right Checklist */}
-                    <div className="md:col-span-3 space-y-2">
-                      {dayPlan.tasks.map((task, tIdx) => {
-                        const taskKey = `${dayPlan.day}-${tIdx}`;
-                        const isDone = completedTasks[taskKey] || false;
-                        return (
-                          <div 
-                            key={tIdx}
-                            onClick={() => toggleTask(dayPlan.day, tIdx)}
-                            className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer select-none ${
-                              isDone 
-                                ? "bg-zinc-950/20 border-emerald-500/10 opacity-70"
-                                : "bg-zinc-950/40 border-zinc-850 hover:border-zinc-800 text-zinc-300"
-                            }`}
-                          >
-                            <button className={`mt-0.5 shrink-0 transition-colors ${isDone ? "text-emerald-400" : "text-zinc-500"}`}>
-                              {isDone ? <CheckSquare className="h-4.5 w-4.5" /> : <Square className="h-4.5 w-4.5" />}
-                            </button>
-                            <span className={`text-xs leading-relaxed ${isDone ? "line-through text-zinc-500" : "text-zinc-200"}`}>
-                              {task}
-                            </span>
-                          </div>
-                        );
-                      })}
+                    <div className="bg-rose-50 p-2.5 rounded border border-rose-100 shrink-0 md:max-w-xs text-[11px] leading-relaxed">
+                      <span className="font-extrabold text-rose-600 block text-[9px] uppercase tracking-wide mb-0.5">Remediation Action</span>
+                      <p className="text-slate-650">{item.action}</p>
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
 
-        </div>
-      </div>
+                {/* Integration of missed quiz items */}
+                {incorrectQuestions.map((q, idx) => (
+                  <div key={`quiz-w-${idx}`} className="p-4 rounded-xl border border-amber-100 bg-amber-50/20 hover:border-amber-200 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs leading-relaxed">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        <h4 className="font-bold text-slate-800 truncate">Quiz Practice Gap</h4>
+                        <span className="text-[9px] font-mono text-slate-400 bg-slate-50 px-1 py-0.2 rounded border border-slate-150 shrink-0">{q.source}</span>
+                      </div>
+                      <p className="text-slate-500 pl-3 leading-normal truncate">Missed Question: "{q.question}"</p>
+                    </div>
 
-      {/* 
-        ========================================================================
-        PRINT-ONLY TEXTBOOK LAYOUT
-        This section is hidden in screen view and displays only when printing.
-        It reformats the study pack into a clean black-and-white academic guide.
-        ========================================================================
-      */}
-      <div className="hidden print:block text-zinc-900 bg-white font-serif p-8 leading-relaxed">
-        
-        {/* Academic Header */}
-        <div className="border-b-2 border-zinc-900 pb-4 mb-6">
-          <div className="flex justify-between items-baseline">
-            <h1 className="text-3xl font-extrabold tracking-tight">{pack.courseCode}: {pack.courseName}</h1>
-            <span className="text-sm font-sans font-semibold uppercase">{pack.university}</span>
-          </div>
-          <p className="text-sm font-sans text-zinc-600 mt-1">Comprehensive Source-Grounded Exam Study Pack</p>
-        </div>
+                    <div className="bg-amber-50 p-2.5 rounded border border-amber-100 shrink-0 md:max-w-xs text-[11px] leading-relaxed">
+                      <span className="font-extrabold text-amber-600 block text-[9px] uppercase tracking-wide mb-0.5">Explanation Study</span>
+                      <p className="text-slate-650">Verify correct options and review reasoning: {q.explanation}</p>
+                    </div>
+                  </div>
+                ))}
 
-        {/* Section 1: Overview */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">1. Course Description & Scope</h2>
-          <p className="text-sm leading-relaxed">{pack.summary}</p>
-        </div>
-
-        {/* Section 2: Course Map */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">2. Course Structure & Topic Map</h2>
-          <table className="w-full border-collapse text-left text-xs mb-4">
-            <thead>
-              <tr className="border-b-2 border-zinc-900 font-sans font-bold">
-                <th className="py-2 pr-4">Week</th>
-                <th className="py-2 pr-4">Topic</th>
-                <th className="py-2 pr-4">Concepts</th>
-                <th className="py-2 pr-4">Weight</th>
-                <th className="py-2">Reference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pack.courseMap.map((item, idx) => (
-                <tr key={idx} className="border-b border-zinc-300">
-                  <td className="py-2.5 pr-4 font-bold">{item.week}</td>
-                  <td className="py-2.5 pr-4">{item.topic}</td>
-                  <td className="py-2.5 pr-4">{item.concepts.join(", ")}</td>
-                  <td className="py-2.5 pr-4 font-semibold">{item.weight}</td>
-                  <td className="py-2.5 italic text-zinc-600">{item.source}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Section 3: Exam Focus Areas */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-4">3. Exam Focus & Core Concepts</h2>
-          <div className="space-y-6">
-            {pack.examFocus.map((item, idx) => (
-              <div key={idx} className="border-l-2 border-zinc-900 pl-4 space-y-2">
-                <h3 className="text-base font-bold font-sans">{idx + 1}. {item.concept} ({item.importance} Priority)</h3>
-                <p className="text-xs text-zinc-500 font-sans italic">Source: {item.source}</p>
-                <p className="text-sm font-semibold">{item.explanation}</p>
-                <div className="bg-zinc-100 p-3 rounded font-mono text-xs my-2 whitespace-pre-wrap">
-                  <strong>Expected Question Format:</strong><br />
-                  {item.likelyQuestion}
-                </div>
-                <p className="text-xs text-zinc-700"><strong>Preparation Strategy:</strong> {item.tips}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Section 4: Key Definitions */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">4. Definitions & Formulas</h2>
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            {pack.definitions.map((def, idx) => (
-              <div key={idx} className="border border-zinc-300 p-3 rounded">
-                <div className="flex justify-between items-baseline mb-1">
-                  <span className="font-bold font-sans">{def.term}</span>
-                  <span className="text-[10px] text-zinc-500 italic font-sans">{def.source}</span>
-                </div>
-                <p className="leading-relaxed mb-2">{def.definition}</p>
-                {def.formula && (
-                  <div className="bg-zinc-100 p-1.5 rounded font-mono text-[10px] mt-1">
-                    Formula: {def.formula}
+                {pack.weakSpots.length === 0 && incorrectQuestions.length === 0 && (
+                  <div className="text-center py-6 space-y-1">
+                    <div className="mx-auto w-9 h-9 flex items-center justify-center rounded-full bg-emerald-50 text-emerald-500 border border-emerald-100">
+                      <CheckCircle className="h-4.5 w-4.5" />
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-800">Clear Study Shield</h4>
+                    <p className="text-[11px] text-slate-500 max-w-xs mx-auto">No weak spots are logged. Complete a practice quiz or review focus lists to log areas.</p>
                   </div>
                 )}
-                {def.confusionPoint && (
-                  <p className="text-[10px] text-red-800 mt-1"><strong>Common Error:</strong> {def.confusionPoint}</p>
-                )}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Section 5: Active Recall Questions */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">5. Active Recall Questions</h2>
-          <div className="space-y-4 text-sm">
-            {pack.activeRecall.map((item, idx) => (
-              <div key={idx} className="space-y-1">
-                <p className="font-bold">Q{idx + 1}. {item.question} <span className="font-sans font-normal text-xs text-zinc-500">({item.source})</span></p>
-                <p className="text-xs text-zinc-600 font-sans italic">Hint: {item.hint}</p>
-                <p className="pl-4 border-l border-zinc-400 text-zinc-800">{item.answer}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Section 6: Practice Quiz */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">6. Practice Quiz</h2>
-          <div className="space-y-5 text-sm">
-            {pack.quiz.map((item, idx) => (
-              <div key={idx} className="space-y-2">
-                <p className="font-bold">Q{idx + 1}. {item.question} <span className="font-sans font-normal text-xs text-zinc-500">({item.source})</span></p>
-                <div className="grid grid-cols-2 gap-2 pl-4 text-xs font-sans">
-                  {item.options.map((opt, oIdx) => (
-                    <div key={oIdx} className="flex items-center gap-1.5">
-                      <span className="w-3.5 h-3.5 rounded-full border border-zinc-500 flex items-center justify-center text-[8px] font-bold">
-                        {String.fromCharCode(65 + oIdx)}
-                      </span>
-                      <span>{opt}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="pl-4 text-xs bg-zinc-50 p-2.5 rounded font-sans leading-relaxed text-zinc-700 border-l-2 border-zinc-400">
-                  <strong>Answer:</strong> {String.fromCharCode(65 + item.correctAnswer)} - {item.options[item.correctAnswer]}<br />
-                  <strong>Explanation:</strong> {item.explanation}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Section 7: Weak Spots */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">7. Identifed Weak Spots & Action Plan</h2>
-          <table className="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr className="border-b-2 border-zinc-900 font-sans font-bold">
-                <th className="py-2 pr-4">Concept</th>
-                <th className="py-2 pr-4">Coverage Gap</th>
-                <th className="py-2">Remediation Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pack.weakSpots.map((item, idx) => (
-                <tr key={idx} className="border-b border-zinc-300">
-                  <td className="py-2.5 pr-4 font-bold">{item.concept}</td>
-                  <td className="py-2.5 pr-4 text-zinc-650">{item.coverage}</td>
-                  <td className="py-2.5 text-zinc-800">{item.action} <span className="italic text-zinc-500">({item.source})</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Section 8: 7-Day Cram Plan */}
-        <div className="mb-8 page-break">
-          <h2 className="text-xl font-bold font-sans border-b border-zinc-400 pb-1 mb-3">8. 7-Day Exam Cram Schedule</h2>
-          <div className="space-y-4 text-xs font-sans">
-            {pack.sevenDayPlan.map((dayPlan) => (
-              <div key={dayPlan.day} className="border border-zinc-300 p-3.5 rounded">
-                <p className="font-bold text-sm text-zinc-900 border-b border-zinc-200 pb-1 mb-2">Day {dayPlan.day}: {dayPlan.focus}</p>
-                <ul className="list-disc pl-4 space-y-1 text-zinc-700">
-                  {dayPlan.tasks.map((task, idx) => (
-                    <li key={idx}>{task}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center text-xs text-zinc-500 font-sans border-t border-zinc-350 pt-4 mt-8">
-          Generated via CoursePack AI (https://coursepack.ai)
-        </div>
       </div>
-
     </div>
   );
 }
