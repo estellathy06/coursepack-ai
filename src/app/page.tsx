@@ -43,6 +43,7 @@ export default function Home() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<{ name: string; price: string } | null>(null);
   const [paymentComplete, setPaymentComplete] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [paymentCardNumber, setPaymentCardNumber] = useState("");
   const [paymentName, setPaymentName] = useState("");
 
@@ -240,6 +241,29 @@ export default function Home() {
         colors: ['#2563eb', '#60a5fa']
       });
     }, 1200);
+  };
+
+  const triggerStripeCheckout = async (planType: "single" | "semester") => {
+    setCheckoutLoading(true);
+    try {
+      const response = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ planType })
+      });
+      const data = await response.json();
+      if (response.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.message || "Failed to create checkout session.");
+      }
+    } catch (error: any) {
+      console.error("[Stripe Checkout Error]", error);
+      alert(`Stripe Checkout Error: ${error.message}`);
+      setCheckoutLoading(false);
+    }
   };
 
   const clearCurrentPack = () => {
@@ -818,8 +842,8 @@ export default function Home() {
 
               {/* Single Pack (Featured) */}
               <div className="quill-card rounded-2xl p-6 border-2 border-blue-500/50 flex flex-col justify-between space-y-6 bg-white relative shadow-lg shadow-blue-500/5">
-                <div className="absolute top-0 right-6 translate-y-[-50%] px-2.5 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-blue-600 text-white tracking-widest animate-pulse">
-                  Free Promo Week
+                <div className="absolute top-0 right-6 translate-y-[-50%] px-2.5 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-blue-600 text-white tracking-widest">
+                  Featured
                 </div>
                 
                 <div className="space-y-3.5">
@@ -828,8 +852,8 @@ export default function Home() {
                     <h4 className="text-base font-bold text-slate-800 mt-0.5">Single Exam Pack</h4>
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-slate-800">$0</span>
-                    <span className="text-blue-600 text-xs font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.2 rounded">Free Promo Active</span>
+                    <span className="text-3xl font-extrabold text-slate-800">$5.99</span>
+                    <span className="text-slate-400 text-xs font-medium">per course</span>
                   </div>
                   <ul className="space-y-2 text-xs text-slate-655">
                     <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600 shrink-0" /> Upload custom slide and note files</li>
@@ -840,10 +864,11 @@ export default function Home() {
                 </div>
                 
                 <button
-                  onClick={() => generatorRef.current?.scrollIntoView({ behavior: "smooth" })}
-                  className="w-full py-2.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:scale-[0.98] transition-all cursor-pointer"
+                  disabled={checkoutLoading}
+                  onClick={() => triggerStripeCheckout("single")}
+                  className="w-full py-2.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white shadow-sm active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  Generate Free Custom Pack
+                  {checkoutLoading ? "Connecting..." : "Unlock Custom Pack"}
                 </button>
               </div>
 
@@ -855,8 +880,8 @@ export default function Home() {
                     <h4 className="text-base font-bold text-slate-800 mt-0.5">Semester Bundle</h4>
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-slate-800">$0</span>
-                    <span className="text-blue-600 text-xs font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.2 rounded">Free Promo Active</span>
+                    <span className="text-3xl font-extrabold text-slate-800">$12.99</span>
+                    <span className="text-slate-400 text-xs font-medium">/ month</span>
                   </div>
                   <ul className="space-y-2 text-xs text-slate-500">
                     <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500 shrink-0" /> Generates up to 5 courses study packs</li>
@@ -867,10 +892,11 @@ export default function Home() {
                 </div>
                 
                 <button
-                  onClick={() => generatorRef.current?.scrollIntoView({ behavior: "smooth" })}
-                  className="w-full py-2.5 text-xs font-bold rounded-lg bg-slate-100 border border-slate-200 hover:bg-slate-200/50 hover:border-slate-350 text-slate-700 transition-all cursor-pointer"
+                  disabled={checkoutLoading}
+                  onClick={() => triggerStripeCheckout("semester")}
+                  className="w-full py-2.5 text-xs font-bold rounded-lg bg-slate-100 border border-slate-200 hover:bg-slate-200/50 hover:border-slate-350 disabled:bg-slate-50 text-slate-700 transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  Get Free Access
+                  {checkoutLoading ? "Connecting..." : "Buy Semester Pass"}
                 </button>
               </div>
 
