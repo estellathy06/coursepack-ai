@@ -7,7 +7,8 @@ import {
   BookOpen, Target, Calendar, ListTodo, Layers,
   ChevronRight, Award, Lock, Loader2, BrainCircuit,
   Plus, ArrowLeft, Trash2, RefreshCw, BookMarked, Settings, Info, BarChart2,
-  CheckSquare, Square, Home, User, GraduationCap, CheckCircle, LogOut, Key
+  CheckSquare, Square, Home, User, GraduationCap, CheckCircle, LogOut, Key,
+  Eye, EyeOff
 } from "lucide-react";
 import FileUploader from "@/components/FileUploader";
 import ExamPredictionSection from "@/components/ExamPredictionSection";
@@ -28,6 +29,7 @@ export default function Page() {
   const [authName, setAuthName] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [googleEmail, setGoogleEmail] = useState("student.demo@gmail.com");
   const [googleName, setGoogleName] = useState("Alex Study");
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -765,6 +767,7 @@ export default function Page() {
                             onClick={() => {
                               setAuthTab('login');
                               setGenerationError(null);
+                              setShowPassword(false);
                             }}
                             className={`pb-2 border-b-2 transition-all cursor-pointer ${authTab === 'login' ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400"}`}
                           >
@@ -775,6 +778,7 @@ export default function Page() {
                             onClick={() => {
                               setAuthTab('signup');
                               setGenerationError(null);
+                              setShowPassword(false);
                             }}
                             className={`pb-2 border-b-2 transition-all cursor-pointer ${authTab === 'signup' ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400"}`}
                           >
@@ -812,14 +816,27 @@ export default function Page() {
 
                           <div className="space-y-1">
                             <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Password</label>
-                            <input
-                              type="password"
-                              required
-                              placeholder="••••••••"
-                              value={authPassword}
-                              onChange={(e) => setAuthPassword(e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750"
-                            />
+                            <div className="relative">
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                required
+                                placeholder="••••••••"
+                                value={authPassword}
+                                onChange={(e) => setAuthPassword(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl pl-3.5 pr-10 py-2 text-slate-750"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 cursor-pointer"
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
                           </div>
 
                           <button
