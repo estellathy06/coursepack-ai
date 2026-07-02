@@ -1979,19 +1979,6 @@ export default function Page() {
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Daily Study Time</label>
-                <select
-                  value={newDailyHours}
-                  onChange={(e) => setNewDailyHours(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                >
-                  <option value="1">1 hour/day</option>
-                  <option value="2">2 hours/day</option>
-                  <option value="3">3 hours/day</option>
-                  <option value="4">4 hours/day</option>
-                </select>
-              </div>
 
               <div className="space-y-1">
                 <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Base Assessment</label>
