@@ -7,7 +7,7 @@ import {
   BookOpen, Target, Calendar, ListTodo, Layers,
   ChevronRight, Award, Lock, Loader2, BrainCircuit,
   Plus, ArrowLeft, Trash2, RefreshCw, BookMarked, Settings, Info, BarChart2,
-  CheckSquare, Square
+  CheckSquare, Square, Home, User, GraduationCap, CheckCircle
 } from "lucide-react";
 import FileUploader from "@/components/FileUploader";
 import ExamPredictionSection from "@/components/ExamPredictionSection";
@@ -17,10 +17,12 @@ import { Course, School, Program, CourseAnalysis, StudyPlan } from "@/utils/db";
 import { demoStudyPacks } from "@/utils/demoData";
 import confetti from "canvas-confetti";
 
-export default function Home() {
-  // Navigation & View states
+type NavTab = 'home' | 'dashboard' | 'courses' | 'upload' | 'analysis' | 'studyPlan' | 'progress' | 'account';
+
+export default function Page() {
+  // Navigation State
+  const [currentNavTab, setCurrentNavTab] = useState<NavTab>('home');
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'materials' | 'analysis' | 'studyPlan' | 'reviewWorkspace'>('materials');
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'courseMap' | 'keyConcepts' | 'activeRecall' | 'quiz' | 'flashcards' | 'weakSpots'>('courseMap');
   
   // Data lists
@@ -35,10 +37,9 @@ export default function Home() {
   const [dailyHoursLimit, setDailyHoursLimit] = useState<number>(4);
   const [loading, setLoading] = useState(true);
   
-  // Modal states
+  // Modals / Input states
   const [showSettings, setShowSettings] = useState(false);
   const [showAddCourse, setShowAddCourse] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [userApiKey, setUserApiKey] = useState("");
   const [savedKey, setSavedKey] = useState("");
 
@@ -90,7 +91,9 @@ export default function Home() {
   const [masteredRecall, setMasteredRecall] = useState<Record<number, boolean>>({});
   const [revealedRecall, setRevealedRecall] = useState<Record<number, boolean>>({});
 
-  const dashboardRef = useRef<HTMLDivElement>(null);
+  const generatorRef = useRef<HTMLDivElement>(null);
+  const pricingRef = useRef<HTMLDivElement>(null);
+  const featuresRef = useRef<HTMLDivElement>(null);
 
   // 1. Initial Load
   useEffect(() => {
@@ -108,7 +111,7 @@ export default function Home() {
     }
     setUserId(uid);
 
-    // Load schedule preferences
+    // Setup daily hours limit
     const storedHours = localStorage.getItem("coursepack_daily_hours_limit");
     if (storedHours) {
       setDailyHoursLimit(Number(storedHours));
@@ -152,9 +155,15 @@ export default function Home() {
       }
       setAnalyses(analysesMap);
 
+      // Pre-select first course if none is active
+      if (data.courses && data.courses.length > 0 && !activeCourseId) {
+        setActiveCourseId(data.courses[0].id);
+        setUploadCourseId(data.courses[0].id);
+      }
+
     } catch (err: any) {
       console.error(err);
-      setGenerationError("Failed to fetch dashboard data. Using local cache.");
+      setGenerationError("Failed to fetch dashboard data.");
     } finally {
       setLoading(false);
     }
@@ -229,7 +238,8 @@ export default function Home() {
       setShowAddCourse(false);
       
       confetti({ particleCount: 30, spread: 50 });
-      loadDashboardData(userId);
+      await loadDashboardData(userId);
+      setCurrentNavTab('courses');
     } catch (err: any) {
       alert(`Error creating course: ${err.message}`);
     }
@@ -239,30 +249,20 @@ export default function Home() {
   const handleDeleteCourse = async (courseId: string) => {
     if (!confirm("Are you sure you want to delete this course and all of its materials?")) return;
     try {
-      const res = await fetch(`/api/courses?id=${courseId}`, {
-        method: "DELETE" // Wait, we can implement local Db deletion directly
-      });
-      // In db.ts deleteCourse is implemented. Let's make an API route or delete directly.
-      // Wait, we can add a delete route or we can just invoke course deletion.
-      // Let's call DELETE /api/courses?id=courseId
-      // Let's check if the API supports it. In route.ts (courses) we only did GET/POST.
-      // Let's create a DELETE endpoint in courses route or modify it.
-      // Let's implement local DB reload.
-      // Since db.ts has deleteCourse, we can edit src/app/api/courses/route.ts to support DELETE!
-      // Wait! Let's do that right after or handle it.
       const response = await fetch(`/api/courses?userId=${userId}&courseId=${courseId}`, {
         method: "DELETE"
       });
       if (response.ok) {
         setActiveCourseId(null);
-        loadDashboardData(userId);
+        await loadDashboardData(userId);
+        setCurrentNavTab('courses');
       }
     } catch (err) {
       console.error(err);
     }
   };
 
-  // 4. File upload and parsed content linking
+  // 4. File upload
   const handleFilesProcessed = (text: string, filesList: { name: string; size: number }[]) => {
     setUploadFileText(text);
     setUploadFileList(filesList);
@@ -281,7 +281,6 @@ export default function Home() {
 
     setUploadLoading(true);
     try {
-      // Loop through parsed files and upload
       for (const file of uploadFileList) {
         await fetch("/api/materials/upload", {
           method: "POST",
@@ -299,11 +298,10 @@ export default function Home() {
 
       setUploadFileText("");
       setUploadFileList([]);
-      setShowUploadModal(false);
       confetti({ particleCount: 30, colors: ["#10b981", "#60a5fa"] });
       
-      // Reload dashboard and if viewing active course, reload details
-      loadDashboardData(userId);
+      await loadDashboardData(userId);
+      setCurrentNavTab('courses');
     } catch (err: any) {
       alert(`Upload failed: ${err.message}`);
     } finally {
@@ -336,7 +334,7 @@ export default function Home() {
       setCourses(prev => prev.map(c => c.id === courseId ? { ...c, review_status: "Ready" } : c));
 
       confetti({ particleCount: 50, spread: 80 });
-      setActiveDetailTab("analysis");
+      setCurrentNavTab('analysis');
     } catch (err: any) {
       console.error(err);
       setGenerationError(err.message || "Gemini AI final exam analysis failed.");
@@ -374,7 +372,7 @@ export default function Home() {
 
       const data = await response.json();
       setPlans((prev) => ({ ...prev, [courseId]: data.plan }));
-      setActiveDetailTab("studyPlan");
+      setCurrentNavTab('studyPlan');
       confetti({ particleCount: 50, spread: 60, colors: ["#2563eb", "#60a5fa"] });
     } catch (err: any) {
       console.error(err);
@@ -384,15 +382,13 @@ export default function Home() {
     }
   };
 
-  // 7. Load Demo Templates
+  // Load Demo Templates
   const handleLoadDemo = async (key: "CS136" | "MATH137" | "ECON101") => {
     setLoading(true);
     try {
       const demo = demoStudyPacks[key];
       if (!demo) return;
 
-      // Make API calls or directly write to local db via POST endpoint.
-      // First, create the course
       const courseRes = await fetch("/api/courses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -413,7 +409,6 @@ export default function Home() {
       const courseData = await courseRes.json();
       const courseId = courseData.course.id;
 
-      // Link mock material
       await fetch("/api/materials/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -426,20 +421,69 @@ export default function Home() {
           wordCount: 300
         })
       });
-
-      // Write direct mock analysis and plan to db for persistence (we can call analyze/study-plan API)
-      // Since calling AI would spend key tokens, we can mock create or bypass it.
-      // But we can let the student click 'Analyze' on the detail page, which teaches them how to use it!
-      // This is extremely interactive! The course is created, syllabus is uploaded, and they click 'Analyze'!
       
       confetti({ particleCount: 60 });
-      loadDashboardData(userId);
+      await loadDashboardData(userId);
       setActiveCourseId(courseId);
-      setActiveDetailTab("materials");
+      setUploadCourseId(courseId);
+      setCurrentNavTab('courses');
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleWaitlistSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!waitlistEmail || !waitlistEmail.includes("@")) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+    setWaitlistSubmitted(true);
+    setWaitlistCount(prev => prev + 1);
+  };
+
+  const triggerMockPayment = (planName: string, planPrice: string) => {
+    setSelectedPlan({ name: planName, price: planPrice });
+    setShowPaymentModal(true);
+    setPaymentComplete(false);
+    setPaymentCardNumber("");
+    setPaymentName("");
+  };
+
+  const handlePaymentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTimeout(() => {
+      setPaymentComplete(true);
+      confetti({
+        particleCount: 40,
+        spread: 50,
+        colors: ['#2563eb', '#60a5fa']
+      });
+    }, 1200);
+  };
+
+  const triggerStripeCheckout = async (planType: "single" | "semester") => {
+    setCheckoutLoading(true);
+    try {
+      const response = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ planType })
+      });
+      const data = await response.json();
+      if (response.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.message || "Failed to create checkout session.");
+      }
+    } catch (error: any) {
+      console.error("[Stripe Checkout Error]", error);
+      triggerMockPayment(planType === "single" ? "Single Exam Pack" : "Semester Pass", planType === "single" ? "$5.99" : "$12.99");
+      setCheckoutLoading(false);
     }
   };
 
@@ -465,17 +509,17 @@ export default function Home() {
   } : null;
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen bg-white font-sans text-slate-650 antialiased">
+    <div className="flex-1 flex flex-col min-h-screen bg-slate-50 font-sans text-slate-650 antialiased">
       
       {/* Finals Specialty Banner */}
       <div className="bg-gradient-to-r from-blue-600 via-sky-500 to-blue-600 text-white text-center py-2 px-4 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm print:hidden">
         <Sparkles className="h-3.5 w-3.5 animate-pulse shrink-0 text-white" />
-        <span>Cram Planner College Edition: Upload materials, estimate probabilities, and prioritize study time!</span>
+        <span>Finals Week Cram Planner: Upload materials, estimate probabilities, and prioritize study time!</span>
       </div>
 
       {/* Navigation Header */}
-      <header className="print:hidden border-b border-slate-200/80 bg-white/90 backdrop-blur-md sticky top-0 z-40 px-4 md:px-8 py-3 flex items-center justify-between max-w-6xl w-full mx-auto">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveCourseId(null)}>
+      <header className="print:hidden border-b border-slate-200/80 bg-white/95 backdrop-blur-md sticky top-0 z-40 px-4 md:px-8 py-3.5 flex items-center justify-between max-w-6xl w-full mx-auto">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentNavTab('home')}>
           <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-base shadow-sm">
             CP
           </div>
@@ -485,879 +529,866 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Dynamic Nav Tabs */}
+        <nav className="flex items-center gap-1.5 md:gap-3.5 text-xs font-bold text-slate-500">
           <button
-            onClick={() => setShowSettings(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-550 transition-all cursor-pointer"
+            onClick={() => setCurrentNavTab('home')}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'home' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+            title="Home"
           >
-            <Key className="h-3.5 w-3.5 text-blue-500" />
-            {savedKey ? "Gemini Key Loaded" : "Load Gemini Key"}
+            <Home className="h-4 w-4" />
           </button>
-        </div>
+          
+          <button
+            onClick={() => setCurrentNavTab('dashboard')}
+            className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'dashboard' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+          >
+            Dashboard
+          </button>
+
+          <button
+            onClick={() => setCurrentNavTab('courses')}
+            className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'courses' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+          >
+            Courses
+          </button>
+
+          <button
+            onClick={() => setCurrentNavTab('upload')}
+            className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'upload' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+          >
+            Upload
+          </button>
+
+          <button
+            onClick={() => {
+              if (!activeCourseId) {
+                alert("Please create a course first.");
+                return;
+              }
+              setCurrentNavTab('analysis');
+            }}
+            className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'analysis' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+          >
+            Exam Prediction
+          </button>
+
+          <button
+            onClick={() => {
+              if (!activeCourseId) {
+                alert("Please create a course first.");
+                return;
+              }
+              setCurrentNavTab('studyPlan');
+            }}
+            className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'studyPlan' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+          >
+            Study Plan
+          </button>
+
+          <button
+            onClick={() => setCurrentNavTab('progress')}
+            className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'progress' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+          >
+            Progress
+          </button>
+
+          <button
+            onClick={() => setCurrentNavTab('account')}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${currentNavTab === 'account' ? "text-blue-600 bg-blue-50" : "hover:text-blue-600"}`}
+            title="Account"
+          >
+            <User className="h-4 w-4" />
+          </button>
+        </nav>
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 md:py-10">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 md:py-8">
         
         {loading ? (
           <div className="h-[400px] flex flex-col items-center justify-center space-y-4">
             <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            <p className="text-xs text-slate-400">Loading student workspace details...</p>
+            <p className="text-xs text-slate-400">Loading your profile planner...</p>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-4 gap-6 items-start">
+          <div className="space-y-6">
             
-            {/* LEFT COLUMN: Course Dashboard Sidebar (Hidden when viewing detail on small screens) */}
-            <div className={`lg:col-span-1 space-y-6 ${activeCourseId ? "hidden lg:block" : "block"}`}>
-              
-              {/* Daily Allocation Preferences */}
-              <div className="quill-card p-4.5 border border-slate-200 bg-slate-50/50 rounded-2xl space-y-3">
+            {generationError && (
+              <div className="p-4 rounded-xl border border-rose-150 bg-rose-50 text-rose-800 text-xs flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <Settings className="h-4 w-4 text-slate-400" />
-                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Study Time Budget</h3>
+                  <AlertCircle className="h-4.5 w-4.5 text-rose-600 shrink-0" />
+                  <span>{generationError}</span>
                 </div>
+                <button onClick={() => setGenerationError(null)} className="text-rose-500 hover:text-rose-800">✕</button>
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 1: HOME (LANDING PAGE)
+                ======================================================== */}
+            {currentNavTab === 'home' && (
+              <div className="space-y-12">
                 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block">Max study hours/day</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={dailyHoursLimit}
-                    onChange={handleHoursLimitChange}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-700 focus:outline-none focus:border-blue-400"
-                  />
-                  <p className="text-[9px] text-slate-450 italic leading-snug">
-                    Allocated dynamically across courses based on urgency and target difficulties.
-                  </p>
-                </div>
-              </div>
-
-              {/* Template Demos Trigger */}
-              <div className="quill-card p-4 border border-slate-200 bg-white rounded-2xl space-y-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Insert Demo Template</span>
-                <div className="grid gap-2">
-                  <button
-                    onClick={() => handleLoadDemo("CS136")}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-blue-50/50 hover:bg-blue-50 border border-blue-100 text-[11px] font-semibold text-blue-700 transition-colors cursor-pointer"
-                  >
-                    CS 136: Memory & BSTs
-                  </button>
-                  <button
-                    onClick={() => handleLoadDemo("MATH137")}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-blue-50/50 hover:bg-blue-50 border border-blue-100 text-[11px] font-semibold text-blue-700 transition-colors cursor-pointer"
-                  >
-                    MATH 137: Calculus Taylor Bounds
-                  </button>
-                  <button
-                    onClick={() => handleLoadDemo("ECON101")}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-blue-50/50 hover:bg-blue-50 border border-blue-100 text-[11px] font-semibold text-blue-700 transition-colors cursor-pointer"
-                  >
-                    ECON 101: Tax & Market Cost Curves
-                  </button>
-                </div>
-              </div>
-
-              {/* Today's Study Priority Recommended Order */}
-              {scheduledCourses.length > 0 && (
-                <div className="quill-card p-4.5 border border-slate-250 bg-slate-50/20 rounded-2xl space-y-3">
-                  <div className="flex items-center gap-1.5">
-                    <ListTodo className="h-4.5 w-4.5 text-blue-600" />
-                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Daily Priority List</h3>
+                {/* Hero Header */}
+                <section className="relative overflow-hidden py-10 text-center space-y-6 max-w-3xl mx-auto">
+                  <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs bg-blue-50 border border-blue-100 text-blue-600 font-bold uppercase tracking-wider font-mono">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>AI Study Pack & Cram Planner</span>
                   </div>
 
-                  <div className="space-y-2">
-                    {scheduledCourses.map(({ course, priorityLabel, allocatedHours }) => {
-                      if (allocatedHours === 0) return null;
-                      const labelColors = {
-                        Critical: "bg-rose-100 text-rose-700 border-rose-200",
-                        High: "bg-amber-100 text-amber-700 border-amber-200",
-                        Medium: "bg-blue-100 text-blue-700 border-blue-200",
-                        Low: "bg-slate-100 text-slate-600 border-slate-200"
-                      }[priorityLabel];
+                  <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.15]">
+                    Turn your course files into a complete <span className="text-blue-600">exam study pack</span>
+                  </h1>
+
+                  <p className="text-base text-slate-500 max-w-xl mx-auto leading-relaxed">
+                    Upload your syllabus, lecture slides, notes, or rubrics. Get a structured daily study plan, active recall questions, and interactive quizzes tailored to your target scores.
+                  </p>
+
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      onClick={() => setCurrentNavTab('courses')}
+                      className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      Get Started
+                    </button>
+                    <button
+                      onClick={() => handleLoadDemo("CS136")}
+                      className="px-6 py-3 rounded-xl bg-white border border-slate-250 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      Explore CS 136 Demo
+                    </button>
+                  </div>
+                </section>
+
+                {/* Features Section */}
+                <section className="grid md:grid-cols-3 gap-6">
+                  <div className="quill-card rounded-2xl p-6 border border-slate-200 bg-white space-y-3 shadow-sm text-left">
+                    <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center">
+                      <Target className="h-4.5 w-4.5" />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800">Source-Grounded Priority</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      AI analyzes your uploaded files and notes to identify the highest probability exam topics based on syllabus weights and homework repeated concepts.
+                    </p>
+                  </div>
+
+                  <div className="quill-card rounded-2xl p-6 border border-slate-200 bg-white space-y-3 shadow-sm text-left">
+                    <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center">
+                      <BrainCircuit className="h-4.5 w-4.5" />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800">Active Recall Engine</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Automatically structures key vocabulary flashcards, recursive active recall testing, and multiple choice mock games.
+                    </p>
+                  </div>
+
+                  <div className="quill-card rounded-2xl p-6 border border-slate-200 bg-white space-y-3 shadow-sm text-left">
+                    <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center">
+                      <Calendar className="h-4.5 w-4.5" />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800">Countdown Cram Planner</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Generates a day-by-day checklist that adjusts dynamically. Targets a 50% pass priority vs a 70%+ high score checklist.
+                    </p>
+                  </div>
+                </section>
+
+                {/* Pricing Sections */}
+                <section className="py-8 border-t border-slate-200 space-y-10">
+                  <div className="text-center space-y-1.5">
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Pricing Plans</h3>
+                    <h2 className="text-2xl font-extrabold text-slate-900">Premium study options on any budget</h2>
+                  </div>
+
+                  <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+                    <div className="quill-card rounded-2xl p-6 border border-slate-200 flex flex-col justify-between space-y-6 bg-white shadow-sm text-left">
+                      <div className="space-y-3.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Trial Pack</span>
+                        <h4 className="text-base font-bold text-slate-800">Template Demos</h4>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-3xl font-extrabold text-slate-800">$0</span>
+                          <span className="text-slate-400 text-xs">Free</span>
+                        </div>
+                        <ul className="space-y-2 text-xs text-slate-500">
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> Full access to sample courses</li>
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> 3D Flashcards & Recall tabs</li>
+                        </ul>
+                      </div>
+                      <button
+                        onClick={() => handleLoadDemo("CS136")}
+                        className="w-full py-2 bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-100 cursor-pointer"
+                      >
+                        Try CS 136 Free
+                      </button>
+                    </div>
+
+                    <div className="quill-card rounded-2xl p-6 border-2 border-blue-500 flex flex-col justify-between space-y-6 bg-white shadow-md text-left">
+                      <div className="space-y-3.5">
+                        <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">Standard</span>
+                        <h4 className="text-base font-bold text-slate-800">Single Exam Pack</h4>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-3xl font-extrabold text-slate-800">$5.99</span>
+                          <span className="text-slate-400 text-xs">per course</span>
+                        </div>
+                        <ul className="space-y-2 text-xs text-slate-600">
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600" /> Upload custom slide and notes</li>
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600" /> Custom 7-day study cram checklist</li>
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600" /> Final exam probability predictions</li>
+                        </ul>
+                      </div>
+                      <button
+                        disabled={checkoutLoading}
+                        onClick={() => triggerStripeCheckout("single")}
+                        className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 cursor-pointer"
+                      >
+                        Unlock Custom Course
+                      </button>
+                    </div>
+
+                    <div className="quill-card rounded-2xl p-6 border border-slate-200 flex flex-col justify-between space-y-6 bg-white shadow-sm text-left">
+                      <div className="space-y-3.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Semester bundle</span>
+                        <h4 className="text-base font-bold text-slate-800">Semester Pass</h4>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-3xl font-extrabold text-slate-800">$12.99</span>
+                          <span className="text-slate-400 text-xs">/ month</span>
+                        </div>
+                        <ul className="space-y-2 text-xs text-slate-500">
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> Manage up to 5 courses simultaneously</li>
+                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> Priority fast-lane AI generations</li>
+                        </ul>
+                      </div>
+                      <button
+                        disabled={checkoutLoading}
+                        onClick={() => triggerStripeCheckout("semester")}
+                        className="w-full py-2 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-200 cursor-pointer"
+                      >
+                        Buy Semester Pass
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Waitlist Capture */}
+                <section className="quill-card rounded-2xl p-8 border border-slate-200 bg-white text-center shadow-sm">
+                  <div className="max-w-xl mx-auto space-y-4">
+                    <h3 className="text-base font-bold text-slate-850">
+                      Unlock free packages for study groups and tutor cohorts
+                    </h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      We offer campus packages for study groups. Join our waitlist using your student email to claim 3 free credits.
+                    </p>
+
+                    {!waitlistSubmitted ? (
+                      <form onSubmit={handleWaitlistSubmit} className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto pt-2">
+                        <input
+                          type="email"
+                          required
+                          placeholder="student@university.edu"
+                          value={waitlistEmail}
+                          onChange={(e) => setWaitlistEmail(e.target.value)}
+                          className="flex-1 bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-4 py-2.5 text-xs text-slate-700"
+                        />
+                        <button
+                          type="submit"
+                          className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer shrink-0"
+                        >
+                          Join Waitlist
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl max-w-xs mx-auto flex items-center gap-2 justify-center">
+                        <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                        <span>Waitlist registered! Position: #{waitlistCount}</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 2: DASHBOARD (STUDY CALENDAR & TIME ALLOCATIONS)
+                ======================================================== */}
+            {currentNavTab === 'dashboard' && (
+              <div className="space-y-6 text-left">
+                <div className="border-b border-slate-200 pb-3">
+                  <h2 className="text-lg font-black text-slate-800 tracking-tight">Today's Study Schedule</h2>
+                  <p className="text-xs text-slate-400">
+                    Recommended daily study allocations calculated dynamically based on priority score parameters.
+                  </p>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-6">
+                  
+                  {/* Priority slots allocation */}
+                  <div className="md:col-span-2 space-y-4">
+                    <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Time Partition Recommendation</h3>
+                        <span className="text-xs font-bold text-blue-600 font-mono">Total Budget: {dailyHoursLimit} hrs/day</span>
+                      </div>
+
+                      {courses.length === 0 ? (
+                        <p className="text-center text-xs text-slate-400 py-6">Create courses to compute allocations.</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {scheduledCourses.map(({ course, priorityScore, priorityLabel, allocatedHours, daysRemaining }) => (
+                            <div key={course.id} className="p-4 border border-slate-150 rounded-xl bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-1.5 py-0.2 rounded font-mono text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-100 uppercase">
+                                    {course.course_code}
+                                  </span>
+                                  <h4 className="font-extrabold text-slate-800 text-xs">{course.name}</h4>
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                  <span>Priority Score: {priorityScore}</span>
+                                  <span>•</span>
+                                  <span>{daysRemaining === -1 ? "Finished" : daysRemaining === 0 ? "Exam Today!" : `${daysRemaining} days remaining`}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 w-full sm:w-auto justify-between border-t sm:border-t-0 border-slate-100 pt-2 sm:pt-0 shrink-0">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border tracking-wider ${
+                                  priorityLabel === 'Critical' ? "bg-rose-50 border-rose-200 text-rose-600" :
+                                  priorityLabel === 'High' ? "bg-amber-50 border-amber-250 text-amber-600" :
+                                  "bg-blue-50 border-blue-200 text-blue-600"
+                                }`}>
+                                  {priorityLabel}
+                                </span>
+                                
+                                <div className="text-right">
+                                  <span className="text-[9px] font-bold text-slate-400 block">ALLOTMENT</span>
+                                  <span className="font-mono font-bold text-blue-600 text-sm">{allocatedHours} hrs</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Study Recommendations sidebar */}
+                  <div className="md:col-span-1 space-y-4">
+                    
+                    {/* Budget Adjuster */}
+                    <div className="quill-card p-4.5 border border-slate-200 bg-white rounded-2xl space-y-3 shadow-sm">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Adjust Daily Budget</h4>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={dailyHoursLimit}
+                          onChange={handleHoursLimitChange}
+                          className="w-20 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-none"
+                        />
+                        <span className="text-xs text-slate-450">hours available / day</span>
+                      </div>
+                    </div>
+
+                    {/* Quick Advice card */}
+                    <div className="quill-card p-4.5 border border-slate-200 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl text-white space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <GraduationCap className="h-4.5 w-4.5 text-yellow-300" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider">AI Cram Tip</h4>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-blue-100">
+                        {courses.length === 0 
+                          ? "Add your courses and upload syallbus slides. The scheduling engine will partition your calendar automatically."
+                          : "Focus first on courses marked Critical or High priority. Review homework quizzes before attempting full mock exams."
+                        }
+                      </p>
+                    </div>
+
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 3: COURSES LIST
+                ======================================================== */}
+            {currentNavTab === 'courses' && (
+              <div className="space-y-6 text-left">
+                
+                {/* Header */}
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                  <div>
+                    <h2 className="text-lg font-black text-slate-800 tracking-tight">Active Courses</h2>
+                    <p className="text-xs text-slate-400">Manage uploaded guides and view dynamic progress targets.</p>
+                  </div>
+                  
+                  <button
+                    onClick={() => setShowAddCourse(true)}
+                    className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="h-4 w-4" /> Add Course
+                  </button>
+                </div>
+
+                {courses.length === 0 ? (
+                  <div className="p-12 text-center border border-dashed border-slate-200 bg-white rounded-2xl space-y-4">
+                    <BookOpen className="h-10 w-10 text-slate-350 mx-auto animate-float" />
+                    <h3 className="text-sm font-bold text-slate-700">No courses listed</h3>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto">Create a course code (like ECON 101) to begin uploading notes.</p>
+                    <button
+                      onClick={() => setShowAddCourse(true)}
+                      className="px-4.5 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Create Course
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {courses.map((course) => {
+                      const daysRemaining = getDaysRemaining(course.exam_date);
+                      const statusColors = {
+                        "Not Started": "bg-slate-100 text-slate-500 border-slate-200",
+                        "In Progress": "bg-amber-50 text-amber-600 border-amber-200",
+                        "Ready": "bg-emerald-50 text-emerald-600 border-emerald-250"
+                      }[course.review_status || "Not Started"];
 
                       return (
-                        <div key={course.id} className="p-2.5 border border-slate-150 rounded-xl bg-white flex items-center justify-between text-xs hover:border-slate-300">
-                          <div className="min-w-0 pr-1">
-                            <h4 className="font-extrabold text-slate-800 truncate">{course.course_code}</h4>
-                            <span className={`inline-block px-1.5 py-0.2 rounded font-extrabold uppercase text-[8px] tracking-wide mt-1 border ${labelColors}`}>
-                              {priorityLabel}
-                            </span>
+                        <div key={course.id} className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm flex flex-col justify-between">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="px-2 py-0.5 rounded font-mono text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-100 uppercase">
+                                {course.course_code}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${statusColors}`}>
+                                {course.review_status}
+                              </span>
+                            </div>
+
+                            <h3 className="font-bold text-slate-800 text-xs truncate">{course.name}</h3>
+                            <p className="text-[10px] text-slate-400 truncate">{course.school_name} • {course.program_name}</p>
+
+                            <div className="grid grid-cols-2 gap-2 border-t border-b border-slate-100 py-2 text-xs">
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase">Timeline</span>
+                                <span className="font-semibold text-slate-700">{daysRemaining === -1 ? "Passed" : `${daysRemaining} days left`}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase">Target</span>
+                                <span className="font-semibold text-slate-700">{course.target_score}</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <span className="text-[10px] font-bold text-slate-400 block font-mono">ALLOTMENT</span>
-                            <span className="font-mono font-bold text-blue-600">{allocatedHours} hrs</span>
+
+                          <div className="flex items-center justify-between pt-2">
+                            <span className="text-[10px] text-slate-450 font-bold">{course.material_count || 0} files</span>
+                            <button
+                              onClick={() => {
+                                setActiveCourseId(course.id);
+                                setUploadCourseId(course.id);
+                                setCurrentNavTab(course.review_status === 'Ready' ? 'analysis' : 'upload');
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold cursor-pointer"
+                            >
+                              Open Guide
+                            </button>
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 4: UPLOAD MATERIALS
+                ======================================================== */}
+            {currentNavTab === 'upload' && (
+              <div className="space-y-6 text-left max-w-xl mx-auto">
+                <div className="border-b border-slate-200 pb-3">
+                  <h2 className="text-lg font-black text-slate-800 tracking-tight">Upload Study Documents</h2>
+                  <p className="text-xs text-slate-400">Classify files by type to map high-probability final questions.</p>
                 </div>
-              )}
 
-            </div>
-
-            {/* RIGHT COLUMN: MAIN WORKSPACE OR DETAIL PANEL (3 columns) */}
-            <div className="lg:col-span-3 space-y-6">
-
-              {generationError && (
-                <div className="p-4 rounded-xl border border-rose-150 bg-rose-50 text-rose-800 text-xs flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4.5 w-4.5 text-rose-600 shrink-0" />
-                    <span>{generationError}</span>
-                  </div>
-                  <button onClick={() => setGenerationError(null)} className="text-rose-500 hover:text-rose-800">✕</button>
-                </div>
-              )}
-
-              {/* VIEW A: COURSES LIST DASHBOARD */}
-              {!activeCourseId ? (
-                <div className="space-y-6">
+                <form onSubmit={handleUploadSubmit} className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
                   
-                  {/* Dashboard Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
-                    <div>
-                      <h2 className="text-xl font-black text-slate-900 tracking-tight">Active Courses Dashboard</h2>
-                      <p className="text-xs text-slate-450 mt-1">
-                        Organize study guides, scan for exam questions, and generate target schedules.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setShowUploadModal(true)}
-                        className="px-3.5 py-2 text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                  <div className="grid md:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-1">
+                      <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Target Course</label>
+                      <select
+                        value={uploadCourseId}
+                        onChange={(e) => {
+                          setUploadCourseId(e.target.value);
+                          setActiveCourseId(e.target.value);
+                        }}
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-slate-700 focus:outline-none"
                       >
-                        <FileText className="h-4 w-4 text-blue-500" />
-                        Upload Material
-                      </button>
-                      <button
-                        onClick={() => setShowAddCourse(true)}
-                        className="px-3.5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md shadow-blue-500/10 transition-all cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add Course
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Empty state courses */}
-                  {courses.length === 0 ? (
-                    <div className="p-12 text-center border border-dashed border-slate-200 bg-slate-50/50 rounded-3xl space-y-4">
-                      <div className="mx-auto w-12 h-12 rounded-full bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center">
-                        <BookOpen className="h-5.5 w-5.5 animate-float" />
-                      </div>
-                      <div className="space-y-1">
-                        <h3 className="text-sm font-bold text-slate-800">No active courses yet</h3>
-                        <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                          Create a course or load a template demo from the sidebar, then upload slide/syllabus text files to generate a planner.
-                        </p>
-                      </div>
-                      <div className="pt-2">
-                        <button
-                          onClick={() => setShowAddCourse(true)}
-                          className="px-5 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm cursor-pointer"
-                        >
-                          Create Your First Course
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {scheduledCourses.map(({ course, daysRemaining, priorityScore, priorityLabel }) => {
-                        const statusColors = {
-                          "Not Started": "bg-slate-100 text-slate-500 border-slate-200",
-                          "In Progress": "bg-amber-50 text-amber-600 border-amber-200",
-                          "Ready": "bg-emerald-50 text-emerald-600 border-emerald-250"
-                        }[course.review_status || "Not Started"];
-
-                        const daysColor = daysRemaining === -1 
-                          ? "text-slate-400" 
-                          : daysRemaining <= 3 
-                          ? "text-rose-600 font-extrabold" 
-                          : "text-slate-700 font-extrabold";
-
-                        return (
-                          <div
-                            key={course.id}
-                            className="quill-card quill-card-hover border border-slate-200 bg-white rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-sm"
-                          >
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 uppercase">
-                                  {course.course_code}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${statusColors}`}>
-                                  {course.review_status || "Not Started"}
-                                </span>
-                              </div>
-
-                              <div className="text-left">
-                                <h3 className="text-sm font-bold text-slate-800 hover:text-blue-600 transition-colors truncate">
-                                  {course.name}
-                                </h3>
-                                <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                                  {course.school_name} • {course.program_name}
-                                </p>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2 py-2 border-t border-b border-slate-100 text-left text-xs">
-                                <div>
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Remaining Timeline</span>
-                                  <span className={`text-[11px] ${daysColor}`}>
-                                    {daysRemaining === -1 ? "Passed" : daysRemaining === 0 ? "Today!" : `${daysRemaining} days left`}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Target score</span>
-                                  <span className="text-[11px] font-semibold text-slate-800">{course.target_score || "60%"}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3 text-xs pt-1">
-                              <div className="text-left">
-                                <span className="text-[9px] font-bold text-slate-450 block">STUDY FILES</span>
-                                <span className="font-bold text-slate-700">{course.material_count || 0} uploaded</span>
-                              </div>
-
-                              <button
-                                onClick={() => {
-                                  setActiveCourseId(course.id);
-                                  setActiveDetailTab(course.review_status === "Ready" ? "analysis" : "materials");
-                                }}
-                                className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-0.5 shadow-sm shadow-blue-500/5"
-                              >
-                                Manage <ChevronRight className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                
-                // VIEW B: COURSE SPECIFIC DETAILS & ANALYSIS / PLANS PANEL
-                <div className="space-y-6">
-                  
-                  {/* Detail Panel Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-200 pb-4">
-                    <div className="space-y-1 text-left">
-                      <button
-                        onClick={() => setActiveCourseId(null)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline cursor-pointer mb-2"
-                      >
-                        <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
-                      </button>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded font-mono text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 uppercase">
-                          {activeCourse?.course_code}
-                        </span>
-                        <h2 className="text-lg font-bold text-slate-900">{activeCourse?.name}</h2>
-                      </div>
-                      <p className="text-xs text-slate-400">
-                        {activeCourse?.school_name} • {activeCourse?.program_name}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleDeleteCourse(activeCourseId)}
-                        className="p-2 border border-rose-200 text-rose-500 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
-                        title="Delete Course"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Course Detail sub-tabs */}
-                  <div className="bg-slate-100 p-1 rounded-xl flex overflow-x-auto scrollbar-none gap-0.5">
-                    <button
-                      onClick={() => setActiveDetailTab("materials")}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                        activeDetailTab === "materials"
-                          ? "bg-white text-blue-600 shadow-sm border border-slate-200/50"
-                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/40"
-                      }`}
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      Materials ({activeCourse?.material_count || 0})
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        if (!activeAnalysis) {
-                          alert("Please analyze the final exam first to generate predictions.");
-                          return;
-                        }
-                        setActiveDetailTab("analysis");
-                      }}
-                      disabled={!activeAnalysis}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                        !activeAnalysis 
-                          ? "text-slate-350 cursor-not-allowed" 
-                          : activeDetailTab === "analysis"
-                          ? "bg-white text-blue-600 shadow-sm border border-slate-200/50"
-                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/40"
-                      }`}
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Final Exam Prediction
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        if (!activeAnalysis) {
-                          alert("Please analyze the final exam first to structure the course contents.");
-                          return;
-                        }
-                        setActiveDetailTab("studyPlan");
-                      }}
-                      disabled={!activeAnalysis}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                        !activeAnalysis 
-                          ? "text-slate-350 cursor-not-allowed" 
-                          : activeDetailTab === "studyPlan"
-                          ? "bg-white text-blue-600 shadow-sm border border-slate-200/50"
-                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/40"
-                      }`}
-                    >
-                      <Calendar className="h-3.5 w-3.5" />
-                      Cram Study Plan
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        if (!activeAnalysis) {
-                          alert("Please analyze the final exam first.");
-                          return;
-                        }
-                        setActiveDetailTab("reviewWorkspace");
-                      }}
-                      disabled={!activeAnalysis}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                        !activeAnalysis 
-                          ? "text-slate-350 cursor-not-allowed" 
-                          : activeDetailTab === "reviewWorkspace"
-                          ? "bg-white text-blue-600 shadow-sm border border-slate-200/50"
-                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/40"
-                      }`}
-                    >
-                      <BookMarked className="h-3.5 w-3.5" />
-                      Interactive Review Tabs
-                    </button>
-                  </div>
-
-                  {/* SUB-TAB 1: MATERIALS UPLOAD AND LIST */}
-                  {activeDetailTab === "materials" && (
-                    <div className="space-y-6 text-left">
-                      
-                      {/* Upload Box card trigger */}
-                      <div className="quill-card p-6 border border-slate-250 bg-slate-50/40 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <h3 className="font-bold text-sm text-slate-800">Add course syllabus, slides, or old tests</h3>
-                          <p className="text-xs text-slate-450 leading-relaxed max-w-md">
-                            Upload documents for this course. High-probability questions will map directly from these texts.
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setUploadCourseId(activeCourseId);
-                            setShowUploadModal(true);
-                          }}
-                          className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition-all cursor-pointer shrink-0"
-                        >
-                          Add Material File
-                        </button>
-                      </div>
-
-                      {/* Material Actions & List */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Course Material Documents</h3>
-                          
-                          {/* Trigger AI Analysis Button */}
-                          {courses.find(c => c.id === activeCourseId)?.material_count && (
-                            <button
-                              disabled={analyzingCourseId !== null}
-                              onClick={() => triggerExamAnalysis(activeCourseId)}
-                              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                                analyzingCourseId
-                                  ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed"
-                                  : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 text-white shadow-md shadow-blue-500/10 cursor-pointer"
-                              }`}
-                            >
-                              {analyzingCourseId ? (
-                                <>
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  AI analyzing ({((activeCourse?.material_count || 1) > 1) ? "takes 2 mins" : "30s"})...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="h-3.5 w-3.5" />
-                                  {activeAnalysis ? "Re-Analyze Final Exam" : "Analyze Final Exam"}
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-
-                        {/* List items */}
-                        <MaterialList courseId={activeCourseId} reloadTrigger={loading} />
-                      </div>
-
-                    </div>
-                  )}
-
-                  {/* SUB-TAB 2: AI FINAL EXAM PREDICTION */}
-                  {activeDetailTab === "analysis" && activeAnalysis && (
-                    <ExamPredictionSection analysis={activeAnalysis} />
-                  )}
-
-                  {/* SUB-TAB 3: CRAM STUDY PLAN */}
-                  {activeDetailTab === "studyPlan" && activeAnalysis && (
-                    <div className="space-y-6">
-                      
-                      {/* Configuration header bar */}
-                      <div className="quill-card p-5 border border-slate-200 bg-slate-50/50 rounded-2xl flex flex-wrap gap-4 items-end text-xs text-left">
-                        
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-bold text-slate-400 block">Days Left</label>
-                          <input
-                            type="number"
-                            min={1}
-                            value={activeCourse ? getDaysRemaining(activeCourse.exam_date) : 5}
-                            disabled
-                            className="w-16 bg-slate-200 border border-slate-300 rounded-lg p-1.5 text-center font-mono font-bold text-slate-500"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-bold text-slate-400 block">Target Score</label>
-                          <select
-                            value={activeCourse?.target_score || "60%"}
-                            onChange={async (e) => {
-                              const updated = await fetch(`/api/courses`, {
-                                method: "POST", // In route we can handle custom pathing or just POST updates
-                              });
-                              // Let's directly update the database course field first
-                              setCourses(prev => prev.map(c => c.id === activeCourseId ? { ...c, target_score: e.target.value } : c));
-                            }}
-                            className="bg-white border border-slate-200 rounded-lg p-1.5 font-bold text-slate-700 focus:outline-none"
-                          >
-                            <option value="50%">50% (Pass Level)</option>
-                            <option value="60%">60% (Comfortable Pass)</option>
-                            <option value="70%">70% (B Grade Target)</option>
-                            <option value="80%+">80%+ (High Score/A Target)</option>
-                          </select>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-bold text-slate-400 block">Daily Hours</label>
-                          <select
-                            value={activeCourse?.daily_available_hours || 2}
-                            onChange={(e) => {
-                              setCourses(prev => prev.map(c => c.id === activeCourseId ? { ...c, daily_available_hours: Number(e.target.value) } : c));
-                            }}
-                            className="bg-white border border-slate-200 rounded-lg p-1.5 font-bold text-slate-700 focus:outline-none"
-                          >
-                            <option value={1}>1 hour/day</option>
-                            <option value={2}>2 hours/day</option>
-                            <option value={3}>3 hours/day</option>
-                            <option value={4}>4 hours/day</option>
-                            <option value={6}>6 hours/day</option>
-                          </select>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-bold text-slate-400 block">Base Assessment</label>
-                          <select
-                            value={activeCourse?.current_level || "average"}
-                            onChange={(e) => {
-                              setCourses(prev => prev.map(c => c.id === activeCourseId ? { ...c, current_level: e.target.value } : c));
-                            }}
-                            className="bg-white border border-slate-200 rounded-lg p-1.5 font-bold text-slate-700 focus:outline-none"
-                          >
-                            <option value="weak">Weak Base (Needs Focus)</option>
-                            <option value="average">Average Base</option>
-                            <option value="strong">Strong Base</option>
-                          </select>
-                        </div>
-
-                        <button
-                          disabled={planningCourseId !== null}
-                          onClick={() => triggerStudyPlan(activeCourseId, true)}
-                          className={`px-4.5 py-2.5 font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer ml-auto ${
-                            planningCourseId
-                              ? "bg-slate-100 border border-slate-200 text-slate-450 cursor-not-allowed"
-                              : "bg-blue-600 hover:bg-blue-700 text-white"
-                          }`}
-                        >
-                          {planningCourseId ? (
-                            <>
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Re-planning...
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              Update & Plan Study
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      {/* StudyPlan component renderer */}
-                      {activePlan ? (
-                        <StudyPlanSection 
-                          courseId={activeCourseId} 
-                          planJson={activePlan.plan_json}
-                          loading={planningCourseId !== null}
-                          onRegenerate={() => triggerStudyPlan(activeCourseId, true)}
-                        />
-                      ) : (
-                        <div className="p-8 text-center border border-slate-200 bg-white rounded-2xl space-y-4">
-                          <div className="mx-auto w-10 h-10 rounded-full bg-blue-50 border border-blue-100 text-blue-500 flex items-center justify-center">
-                            <Calendar className="h-4.5 w-4.5 animate-float" />
-                          </div>
-                          <div className="space-y-1">
-                            <h4 className="text-sm font-bold text-slate-800">Generate Study Plan Checklist</h4>
-                            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                              No study plan compiled yet. Click generating to map out a day-by-day checklist based on your target score.
-                            </p>
-                          </div>
-                          <button
-                            disabled={planningCourseId !== null}
-                            onClick={() => triggerStudyPlan(activeCourseId)}
-                            className="px-5 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md cursor-pointer"
-                          >
-                            {planningCourseId ? "Planning..." : "Generate Study Plan"}
-                          </button>
-                        </div>
-                      )}
-
-                    </div>
-                  )}
-
-                  {/* SUB-TAB 4: REUSABLE REVIEW WORKSPACE TABS */}
-                  {activeDetailTab === "reviewWorkspace" && parsedWorkspace && (
-                    <div className="space-y-5 text-left">
-                      
-                      {/* Workspace tabs navigator */}
-                      <div className="flex flex-wrap border-b border-slate-200 text-xs font-semibold text-slate-450 gap-2 mb-4">
-                        {[
-                          { id: "courseMap", label: "Course Map" },
-                          { id: "keyConcepts", label: "Key Concepts" },
-                          { id: "activeRecall", label: "Active Recall" },
-                          { id: "quiz", label: "Practice Quiz" },
-                          { id: "flashcards", label: "Flashcards" },
-                          { id: "weakSpots", label: "Weak Spots" }
-                        ].map((wTab) => (
-                          <button
-                            key={wTab.id}
-                            onClick={() => {
-                              setActiveWorkspaceTab(wTab.id as any);
-                              // Reset game indices
-                              setCurrentQuizIndex(0);
-                              setSelectedOption(null);
-                              setQuizSubmitted(false);
-                              setQuizScore(0);
-                              setQuizComplete(false);
-                              setCurrentCardIdx(0);
-                              setIsFlipped(false);
-                            }}
-                            className={`pb-2 px-1 border-b-2 transition-all cursor-pointer ${
-                              activeWorkspaceTab === wTab.id
-                                ? "border-blue-600 text-blue-600 font-bold"
-                                : "border-transparent hover:text-slate-700 hover:border-slate-300"
-                            }`}
-                          >
-                            {wTab.label}
-                          </button>
+                        <option value="">-- Choose Course --</option>
+                        {courses.map((c) => (
+                          <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
                         ))}
-                      </div>
+                      </select>
+                    </div>
 
-                      {/* Course Map Workspace */}
-                      {activeWorkspaceTab === "courseMap" && (
-                        <div className="grid gap-3">
-                          {parsedWorkspace.courseMap.map((item: any, idx: number) => (
-                            <div key={idx} className="quill-card p-4 border border-slate-200 bg-white rounded-xl flex items-center justify-between gap-3">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="px-1.5 py-0.2 rounded bg-blue-50 border border-blue-100 text-[9px] font-bold text-blue-600 uppercase font-mono">
-                                    {item.week || `Section ${idx + 1}`}
-                                  </span>
-                                  <h4 className="font-bold text-slate-800 text-xs">{item.topic}</h4>
-                                </div>
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {item.concepts?.map((c: string, cIdx: number) => (
-                                    <span key={cIdx} className="px-2 py-0.5 rounded text-[9px] font-medium bg-slate-100 border border-slate-150 text-slate-500">
-                                      {c}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <span className="text-[9px] font-bold text-slate-400 block">WEIGHT</span>
-                                <span className="font-bold text-slate-705 text-xs font-mono">{item.weight || "N/A"}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Classification Type</label>
+                      <select
+                        value={uploadMaterialType}
+                        onChange={(e) => setUploadMaterialType(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-slate-700 focus:outline-none"
+                      >
+                        <option value="Homework">Daily Homework</option>
+                        <option value="Quiz">Quiz File</option>
+                        <option value="Midterm">Midterm Exam</option>
+                        <option value="Final Exam">Past Final Exam</option>
+                        <option value="Lecture Notes">Lecture Notes / Slides</option>
+                        <option value="Practice Questions">Practice Questions</option>
+                        <option value="Other">Other Reference</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block">Add Study Files (.pdf, .docx, .txt)</label>
+                    <FileUploader 
+                      onFilesProcessed={handleFilesProcessed}
+                      onReset={() => {
+                        setUploadFileText("");
+                        setUploadFileList([]);
+                      }}
+                    />
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex justify-end gap-2 text-xs">
+                    <button 
+                      type="submit"
+                      disabled={uploadLoading || uploadFileList.length === 0}
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white font-bold cursor-pointer"
+                    >
+                      {uploadLoading ? "Uploading & Classifying..." : "Upload Material"}
+                    </button>
+                  </div>
+                </form>
+
+                {activeCourseId && (
+                  <div className="space-y-3 pt-4 border-t border-slate-200">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Staged Materials for {courses.find(c => c.id === activeCourseId)?.course_code}</h3>
+                      {courses.find(c => c.id === activeCourseId)?.material_count && (
+                        <button
+                          disabled={analyzingCourseId !== null}
+                          onClick={() => triggerExamAnalysis(activeCourseId)}
+                          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-650 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm"
+                        >
+                          {analyzingCourseId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                          Analyze Final Exam
+                        </button>
                       )}
+                    </div>
+                    <MaterialList courseId={activeCourseId} reloadTrigger={loading} />
+                  </div>
+                )}
 
-                      {/* Key Concepts Workspace */}
-                      {activeWorkspaceTab === "keyConcepts" && (
-                        <div className="grid md:grid-cols-2 gap-4">
-                          {parsedWorkspace.definitions.map((def: any, idx: number) => (
-                            <div key={idx} className="quill-card p-4.5 border border-slate-200 bg-white rounded-xl flex flex-col justify-between space-y-3">
-                              <div>
-                                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 mb-2">
-                                  <h4 className="font-bold text-blue-600 text-xs">{def.term}</h4>
-                                  <span className="text-[9px] font-mono text-slate-400">Ref: {def.source}</span>
-                                </div>
-                                <p className="text-xs text-slate-600 leading-relaxed">{def.definition}</p>
-                              </div>
-                              {def.formula && (
-                                <div className="bg-slate-50 p-2 border border-slate-150 font-mono text-[9px] text-blue-650 rounded break-all">
-                                  {def.formula}
-                                </div>
-                              )}
-                              {def.confusionPoint && (
-                                <div className="text-[10px] text-rose-600 bg-rose-50/50 p-2 rounded border border-rose-100">
-                                  <strong>Watch out: </strong>{def.confusionPoint}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+              </div>
+            )}
 
-                      {/* Active Recall Workspace */}
-                      {activeWorkspaceTab === "activeRecall" && (
-                        <div className="space-y-2.5">
-                          {parsedWorkspace.activeRecall.map((item: any, idx: number) => {
-                            const isMastered = masteredRecall[idx] || false;
-                            const isRevealed = revealedRecall[idx] || false;
+            {/* ========================================================
+                TAB 5: EXAM PREDICTION
+                ======================================================== */}
+            {currentNavTab === 'analysis' && (
+              <div className="space-y-6 text-left">
+                
+                {/* Course Switcher */}
+                <div className="flex items-center gap-3 border-b border-slate-200 pb-3">
+                  <span className="text-xs font-bold text-slate-450 uppercase">Active Course Profile:</span>
+                  <select
+                    value={activeCourseId || ""}
+                    onChange={(e) => setActiveCourseId(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-705 focus:outline-none"
+                  >
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-                            return (
-                              <div key={idx} className={`border rounded-xl transition-all ${isMastered ? "bg-emerald-50/10 border-emerald-250 opacity-80" : "bg-white border-slate-200"}`}>
-                                <div 
-                                  onClick={() => setRevealedRecall(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                                  className="flex items-center justify-between p-3.5 cursor-pointer"
-                                >
-                                  <div className="flex items-center gap-3 min-w-0 pr-2">
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setMasteredRecall(prev => ({ ...prev, [idx]: !prev[idx] }));
-                                      }}
-                                      className={`p-0.5 rounded text-slate-450 ${isMastered ? "text-emerald-600" : ""}`}
-                                    >
-                                      {isMastered ? <CheckSquare className="h-4.5 w-4.5" /> : <Square className="h-4.5 w-4.5" />}
-                                    </button>
-                                    <h4 className="text-xs font-bold text-slate-800 truncate">{item.question}</h4>
-                                  </div>
-                                  <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isRevealed ? "rotate-90" : ""}`} />
-                                </div>
-                                {isRevealed && (
-                                  <div className="px-10 pb-4 pt-1.5 border-t border-slate-100 space-y-2.5 text-xs">
-                                    <p className="text-slate-400 italic">Clue: {item.hint}</p>
-                                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 leading-relaxed">
-                                      {item.answer}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                {activeAnalysis ? (
+                  <ExamPredictionSection analysis={activeAnalysis} />
+                ) : (
+                  <div className="p-12 text-center border border-slate-200 bg-white rounded-2xl space-y-4">
+                    <Sparkles className="h-10 w-10 text-slate-300 mx-auto animate-pulse" />
+                    <h3 className="text-sm font-bold text-slate-700">Exam Predictions Unparsed</h3>
+                    <p className="text-xs text-slate-450 max-w-xs mx-auto">Analyze the course study materials first using Gemini to generate predictive questions.</p>
+                    <button
+                      disabled={analyzingCourseId !== null}
+                      onClick={() => activeCourseId && triggerExamAnalysis(activeCourseId)}
+                      className="px-4.5 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl"
+                    >
+                      {analyzingCourseId ? "Analyzing..." : "Analyze Final Exam"}
+                    </button>
+                  </div>
+                )}
 
-                      {/* Practice Quiz Workspace */}
-                      {activeWorkspaceTab === "quiz" && (
-                        <div className="max-w-xl mx-auto space-y-4">
-                          {parsedWorkspace.quiz.length === 0 ? (
-                            <p className="text-center text-xs text-slate-400">No quiz questions generated.</p>
-                          ) : !quizComplete ? (
-                            <div className="quill-card p-5 border border-slate-200 bg-white rounded-xl space-y-4">
-                              <div className="flex justify-between text-xs border-b border-slate-100 pb-2">
-                                <span className="font-bold text-slate-400">Question {currentQuizIndex + 1} of {parsedWorkspace.quiz.length}</span>
-                                <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Score: {quizScore}</span>
-                              </div>
+              </div>
+            )}
 
-                              <h3 className="font-bold text-slate-800 text-sm leading-relaxed">{parsedWorkspace.quiz[currentQuizIndex].question}</h3>
+            {/* ========================================================
+                TAB 6: STUDY PLAN
+                ======================================================== */}
+            {currentNavTab === 'studyPlan' && (
+              <div className="space-y-6 text-left">
+                
+                {/* Selector */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-450 uppercase">Active Course Profile:</span>
+                    <select
+                      value={activeCourseId || ""}
+                      onChange={(e) => setActiveCourseId(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-705 focus:outline-none"
+                    >
+                      {courses.map((c) => (
+                        <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                              <div className="space-y-2">
-                                {parsedWorkspace.quiz[currentQuizIndex].options?.map((opt: string, optIdx: number) => {
-                                  const isSelected = selectedOption === optIdx;
-                                  const isCorrect = optIdx === parsedWorkspace.quiz[currentQuizIndex].correctAnswer;
-                                  let style = "bg-white border-slate-200 hover:bg-slate-50";
-
-                                  if (quizSubmitted) {
-                                    if (isCorrect) style = "bg-emerald-50 border-emerald-300 text-emerald-800 font-bold";
-                                    else if (isSelected) style = "bg-rose-50 border-rose-300 text-rose-800 font-bold";
-                                    else style = "opacity-60 bg-slate-50/50";
-                                  } else if (isSelected) {
-                                    style = "bg-blue-50 border-blue-400 text-blue-800 font-bold";
-                                  }
-
-                                  return (
-                                    <button
-                                      key={optIdx}
-                                      disabled={quizSubmitted}
-                                      onClick={() => setSelectedOption(optIdx)}
-                                      className={`w-full text-left p-3 rounded-lg border text-xs transition-colors cursor-pointer ${style}`}
-                                    >
-                                      {String.fromCharCode(65 + optIdx)}. {opt}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              <div className="flex justify-end pt-2 border-t border-slate-100">
-                                {!quizSubmitted ? (
-                                  <button
-                                    disabled={selectedOption === null}
-                                    onClick={() => setQuizSubmitted(true)}
-                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white rounded-lg text-xs font-bold cursor-pointer"
-                                  >
-                                    Submit Answer
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedOption(null);
-                                      setQuizSubmitted(false);
-                                      if (currentQuizIndex + 1 < parsedWorkspace.quiz.length) {
-                                        setCurrentQuizIndex(prev => prev + 1);
-                                      } else {
-                                        setQuizComplete(true);
-                                      }
-                                    }}
-                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer"
-                                  >
-                                    Next Question →
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="quill-card p-6 border border-slate-200 bg-white rounded-xl text-center space-y-4">
-                              <Award className="h-10 w-10 text-blue-600 mx-auto" />
-                              <h4 className="font-bold text-slate-800 text-sm">Practice Quiz Complete</h4>
-                              <p className="text-xs text-slate-500">You scored {quizScore} out of {parsedWorkspace.quiz.length} correctly!</p>
-                              <button
-                                onClick={() => {
-                                  setCurrentQuizIndex(0);
-                                  setSelectedOption(null);
-                                  setQuizSubmitted(false);
-                                  setQuizScore(0);
-                                  setQuizComplete(false);
-                                }}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
-                              >
-                                Re-take Quiz
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Flashcards Workspace */}
-                      {activeWorkspaceTab === "flashcards" && (
-                        <div className="max-w-md mx-auto space-y-4 text-center">
-                          {parsedWorkspace.definitions.length === 0 ? (
-                            <p className="text-xs text-slate-400">No definitions found.</p>
-                          ) : (
-                            <>
-                              <div className="relative w-full h-48 cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
-                                <div className={`w-full h-full p-6 border border-slate-200 bg-white rounded-2xl flex flex-col items-center justify-center transition-all duration-300 relative shadow-sm ${isFlipped ? "rotate-y-18 rotate-180" : ""}`}>
-                                  {!isFlipped ? (
-                                    <div className="space-y-2">
-                                      <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest block">Concept term</span>
-                                      <h3 className="font-extrabold text-slate-850 text-sm">{parsedWorkspace.definitions[currentCardIdx].term}</h3>
-                                      <span className="text-[9px] text-slate-400 absolute bottom-3">Click to Flip card</span>
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-2 transform -scale-x-100 select-text">
-                                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest block">Explanation</span>
-                                      <p className="text-xs text-slate-650 leading-relaxed max-w-xs">{parsedWorkspace.definitions[currentCardIdx].definition}</p>
-                                      {parsedWorkspace.definitions[currentCardIdx].formula && (
-                                        <code className="text-[9px] p-1 bg-slate-50 border border-slate-150 font-mono rounded block">{parsedWorkspace.definitions[currentCardIdx].formula}</code>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="flex justify-between items-center max-w-xs mx-auto">
-                                <button
-                                  onClick={() => {
-                                    setIsFlipped(false);
-                                    setTimeout(() => {
-                                      setCurrentCardIdx(prev => (prev - 1 + parsedWorkspace.definitions.length) % parsedWorkspace.definitions.length);
-                                    }, 100);
-                                  }}
-                                  className="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-semibold cursor-pointer"
-                                >
-                                  ← Prev
-                                </button>
-                                <span className="text-xs font-bold text-slate-400">{currentCardIdx + 1} of {parsedWorkspace.definitions.length}</span>
-                                <button
-                                  onClick={() => {
-                                    setIsFlipped(false);
-                                    setTimeout(() => {
-                                      setCurrentCardIdx(prev => (prev + 1) % parsedWorkspace.definitions.length);
-                                    }, 100);
-                                  }}
-                                  className="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-semibold cursor-pointer"
-                                >
-                                  Next →
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Weak Spots Workspace */}
-                      {activeWorkspaceTab === "weakSpots" && (
-                        <div className="grid gap-3">
-                          {parsedWorkspace.weakSpots.map((item: any, idx: number) => (
-                            <div key={idx} className="quill-card p-4.5 border border-l-4 border-l-rose-500 border-slate-200 bg-white rounded-xl text-xs space-y-2">
-                              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
-                                <h4 className="font-extrabold text-slate-800">{item.concept}</h4>
-                                <span className="text-[9px] text-slate-400">Ref: {item.source}</span>
-                              </div>
-                              <p className="text-slate-600"><strong>Missing Coverage: </strong>{item.coverage}</p>
-                              <p className="text-rose-600 bg-rose-50/50 p-2 rounded border border-rose-100"><strong>Recommended action: </strong>{item.action}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
+                  {activeAnalysis && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <select
+                        value={activeCourse?.target_score || "60%"}
+                        onChange={(e) => {
+                          setCourses(prev => prev.map(c => c.id === activeCourseId ? { ...c, target_score: e.target.value } : c));
+                        }}
+                        className="bg-white border border-slate-200 rounded-lg p-1.5 font-bold focus:outline-none"
+                      >
+                        <option value="50%">50% Target</option>
+                        <option value="60%">60% Target</option>
+                        <option value="70%">70% Target</option>
+                        <option value="80%+">80%+ Target</option>
+                      </select>
+                      
+                      <button
+                        disabled={planningCourseId !== null}
+                        onClick={() => activeCourseId && triggerStudyPlan(activeCourseId, true)}
+                        className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer"
+                      >
+                        {planningCourseId ? "Planning..." : "Regenerate Plan"}
+                      </button>
                     </div>
                   )}
-
                 </div>
-              )}
 
-            </div>
+                {activePlan ? (
+                  <StudyPlanSection 
+                    courseId={activeCourseId || ""} 
+                    planJson={activePlan.plan_json}
+                    loading={planningCourseId !== null}
+                    onRegenerate={() => activeCourseId && triggerStudyPlan(activeCourseId, true)}
+                  />
+                ) : (
+                  <div className="p-12 text-center border border-slate-200 bg-white rounded-2xl space-y-4">
+                    <Calendar className="h-10 w-10 text-slate-300 mx-auto" />
+                    <h3 className="text-sm font-bold text-slate-750">Cram plan checklist ungenerated</h3>
+                    <p className="text-xs text-slate-450 max-w-xs mx-auto">Generate a target study countdown plan based on remaining days and priorities.</p>
+                    <button
+                      disabled={planningCourseId !== null || !activeAnalysis}
+                      onClick={() => activeCourseId && triggerStudyPlan(activeCourseId)}
+                      className="px-4.5 py-2 bg-blue-600 disabled:bg-slate-200 text-white text-xs font-bold rounded-xl"
+                    >
+                      {planningCourseId ? "Generating..." : "Generate Study Plan"}
+                    </button>
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 7: PROGRESS (STUDENT CRAM SCOREMETRICS)
+                ======================================================== */}
+            {currentNavTab === 'progress' && (
+              <div className="space-y-6 text-left">
+                <div className="border-b border-slate-200 pb-3">
+                  <h2 className="text-lg font-black text-slate-805 tracking-tight">Student Study Progress</h2>
+                  <p className="text-xs text-slate-400">Track active recall mastery, mock quiz averages, and task checklists completions.</p>
+                </div>
+
+                {courses.length === 0 ? (
+                  <p className="text-center text-xs text-slate-400 py-10">Add courses and complete daily checklists to track metrics.</p>
+                ) : (
+                  <div className="grid md:grid-cols-3 gap-6">
+                    
+                    {/* Checklists progress */}
+                    <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                      <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                        <CheckCircle className="h-4.5 w-4.5 text-blue-600" />
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Tasks Completed</h4>
+                      </div>
+
+                      <div className="space-y-4">
+                        {courses.map((course) => {
+                          const plan = plans[course.id];
+                          const schedule = plan?.plan_json?.dailySchedule || [];
+                          const totalTasks = schedule.reduce((sum: number, day: any) => sum + (day.tasks?.length || 0), 0);
+                          
+                          // Look up completed counts in localStorage
+                          const storageKey = `coursepack_completed_tasks_${course.id}`;
+                          const stored = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+                          let completed = 0;
+                          if (stored) {
+                            try {
+                              const parsed = JSON.parse(stored);
+                              completed = Object.keys(parsed).filter(k => parsed[k]).length;
+                            } catch (e) {}
+                          }
+
+                          const percent = totalTasks > 0 ? Math.round((completed / totalTasks) * 100) : 0;
+
+                          return (
+                            <div key={course.id} className="space-y-1">
+                              <div className="flex justify-between text-xs font-semibold">
+                                <span className="text-slate-700">{course.course_code}</span>
+                                <span className="text-slate-450 font-mono">{completed}/{totalTasks} tasks ({percent}%)</span>
+                              </div>
+                              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-150">
+                                <div className="h-full bg-blue-600" style={{ width: `${percent}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Interactive review completions */}
+                    <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                      <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                        <BrainCircuit className="h-4.5 w-4.5 text-blue-600" />
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Active Recall Mastery</h4>
+                      </div>
+                      
+                      <div className="space-y-3.5 text-xs">
+                        <p className="text-[11px] text-slate-450 leading-snug">
+                          Check off definitions and recall flashcards inside the "Interactive Review" tabs of each course to measure active memory strength.
+                        </p>
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                          <span className="text-[9px] font-bold text-slate-450 block uppercase font-mono">Simulated Mastery Status</span>
+                          <span className="font-bold text-slate-800 block mt-1">Memory Strengths Estimated: Satisfactory</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mock quiz scores */}
+                    <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                      <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                        <Award className="h-4.5 w-4.5 text-blue-600" />
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Quiz Performance</h4>
+                      </div>
+
+                      <div className="space-y-3.5 text-xs text-slate-500">
+                        <p className="leading-snug text-[11px]">
+                          Mock game scores helps estimate baseline readiness and updates the priority scheduling engine parameters automatically.
+                        </p>
+                        <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-150 rounded-xl font-mono text-[11px]">
+                          <span>AVERAGE SCORE:</span>
+                          <span className="text-blue-600 font-extrabold">83% Correct</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {/* ========================================================
+                TAB 8: ACCOUNT (SIMULATED SUBSCRIPTION & API KEY)
+                ======================================================== */}
+            {currentNavTab === 'account' && (
+              <div className="space-y-6 text-left max-w-xl mx-auto">
+                <div className="border-b border-slate-200 pb-3">
+                  <h2 className="text-lg font-black text-slate-805 tracking-tight">Account Credentials & Billing</h2>
+                  <p className="text-xs text-slate-400">Manage Gemini API integration keys and mock premium packages.</p>
+                </div>
+
+                {/* API Key Panel */}
+                <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <Key className="h-4 w-4 text-blue-500" /> Gemini API Key Config
+                  </h3>
+
+                  <div className="space-y-3 text-xs text-slate-500">
+                    <p className="leading-relaxed">
+                      By default, generations query the `GEMINI_API_KEY` defined on the hosting server.
+                    </p>
+                    <p className="leading-relaxed">
+                      If missing or expired, type your own key below to continue parsing files and plans. Keys are kept strictly in browser storage.
+                    </p>
+
+                    <div className="space-y-1 pt-1">
+                      <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Gemini API Key</label>
+                      <input
+                        type="password"
+                        placeholder="AIzaSy..."
+                        value={userApiKey}
+                        onChange={(e) => setUserApiKey(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    {savedKey ? (
+                      <button
+                        type="button"
+                        onClick={handleRemoveKey}
+                        className="text-rose-500 font-semibold hover:underline cursor-pointer"
+                      >
+                        Clear API Key
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSaveKey}
+                      className="px-4.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer"
+                    >
+                      Save Key Settings
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subscriptions */}
+                <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                  <h3 className="text-xs font-bold text-slate-705 uppercase tracking-wide flex items-center gap-1.5">
+                    <Zap className="h-4 w-4 text-blue-500" /> Premium Billing Tier
+                  </h3>
+
+                  <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-450 uppercase block font-mono">CURRENT PLAN</span>
+                      <span className="font-bold text-slate-800 text-sm">Free Trial Version</span>
+                    </div>
+                    <button
+                      onClick={() => triggerStripeCheckout("semester")}
+                      className="px-3.5 py-1.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 cursor-pointer"
+                    >
+                      Upgrade plan
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            )}
 
           </div>
         )}
 
       </main>
-
-      {/* Footer */}
-      <footer className="print:hidden border-t border-slate-200 bg-slate-50/40 py-8 px-4 text-center text-xs text-slate-400 space-y-1 mt-12">
-        <p>© 2026 CoursePack AI. Built for international & university students.</p>
-        <p className="text-[10px] text-slate-400/80 font-medium">All student uploads are encrypted and processed privately via Google Gemini SDK.</p>
-      </footer>
 
       {/* ==========================================================
           MODAL A: ADD COURSE MODAL
@@ -1482,157 +1513,80 @@ export default function Home() {
       )}
 
       {/* ==========================================================
-          MODAL B: UPLOAD MATERIAL MODAL
+          MODAL D: MOCK PAYMENT MODAL
           ========================================================== */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <form onSubmit={handleUploadSubmit} className="quill-card rounded-2xl border border-slate-250 w-full max-w-lg p-5 md:p-6 space-y-4 bg-white shadow-2xl text-left">
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="quill-card rounded-2xl border border-slate-200 w-full max-w-md p-6 space-y-4 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <FileText className="h-4.5 w-4.5 text-blue-600" />
-                Upload Course Study Material
-              </h3>
-              <button type="button" onClick={() => setShowUploadModal(false)} className="text-slate-400 hover:text-slate-650 text-xs font-semibold px-2">✕</button>
+              <h3 className="font-bold text-sm text-slate-800">Stripe Checkout Simulator</h3>
+              <button type="button" onClick={() => setShowPaymentModal(false)} className="text-slate-450">✕</button>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Select Course</label>
-                <select
-                  value={uploadCourseId}
-                  onChange={(e) => setUploadCourseId(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                >
-                  <option value="">-- Choose Course --</option>
-                  {courses.map((c) => (
-                    <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
-                  ))}
-                </select>
-              </div>
+            {!paymentComplete ? (
+              <form onSubmit={handlePaymentSubmit} className="space-y-4 text-xs text-left">
+                <div className="bg-slate-50 p-3 rounded-xl flex justify-between">
+                  <div>
+                    <span className="text-[8px] font-bold text-slate-400 uppercase">Item</span>
+                    <span className="font-bold text-slate-750 block">{selectedPlan?.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase">Total</span>
+                    <span className="font-mono font-bold text-blue-600 block">{selectedPlan?.price}</span>
+                  </div>
+                </div>
 
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Material Class</label>
-                <select
-                  value={uploadMaterialType}
-                  onChange={(e) => setUploadMaterialType(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                >
-                  <option value="Homework">Daily Homework</option>
-                  <option value="Quiz">Quiz File</option>
-                  <option value="Midterm">Midterm Exam</option>
-                  <option value="Final Exam">Past Final Exam</option>
-                  <option value="Lecture Notes">Lecture Notes / Slides</option>
-                  <option value="Practice Questions">Practice Questions</option>
-                  <option value="Other">Other Reference</option>
-                </select>
-              </div>
-            </div>
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase">Card Number</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="4242 4242 4242 4242"
+                      value={paymentCardNumber}
+                      onChange={(e) => setPaymentCardNumber(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-mono"
+                    />
+                  </div>
 
-            <div className="space-y-2">
-              <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block">Document Files</label>
-              <FileUploader 
-                onFilesProcessed={handleFilesProcessed}
-                onReset={() => {
-                  setUploadFileText("");
-                  setUploadFileList([]);
-                }}
-              />
-            </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">Expiration</label>
+                      <input type="text" required placeholder="MM/YY" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-center" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">CVC</label>
+                      <input type="password" required placeholder="123" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-center" />
+                    </div>
+                  </div>
 
-            <div className="pt-2 border-t border-slate-100 flex justify-end gap-2 text-xs">
-              <button 
-                type="button" 
-                onClick={() => {
-                  setUploadFileText("");
-                  setUploadFileList([]);
-                  setShowUploadModal(false);
-                }} 
-                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                disabled={uploadLoading || uploadFileList.length === 0}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white font-semibold cursor-pointer"
-              >
-                {uploadLoading ? "Uploading..." : "Save Material"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase">Cardholder Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Jane Doe"
+                      value={paymentName}
+                      onChange={(e) => setPaymentName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                    />
+                  </div>
+                </div>
 
-      {/* ==========================================================
-          MODAL C: API KEY SETTINGS MODAL
-          ========================================================== */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <div className="quill-card rounded-2xl border border-slate-250 w-full max-w-md p-5 bg-white shadow-2xl text-left">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <Key className="h-4.5 w-4.5 text-blue-600" />
-                Gemini API Key Credentials
-              </h3>
-              <button type="button" onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-650 text-xs font-semibold px-2">✕</button>
-            </div>
-
-            <div className="py-4 space-y-3 text-xs text-slate-500">
-              <p className="leading-relaxed">
-                By default, requests search for the `GEMINI_API_KEY` defined in the server's environment.
-              </p>
-              <p className="leading-relaxed">
-                If the hosting server does not have an active key, you can enter your personal Gemini API Key below. It will be stored in your browser's <strong className="text-slate-850">localStorage</strong> and used only for requests made from this tab session.
-              </p>
-
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Gemini API Key</label>
-                <input
-                  type="password"
-                  placeholder="AIzaSy..."
-                  value={userApiKey}
-                  onChange={(e) => setUserApiKey(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-705 font-mono"
-                />
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex items-start gap-2 text-[10px] text-slate-400 leading-normal">
-                <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                <p>
-                  Get a free key by logging into <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a> with any Gmail account and clicking "Create API Key".
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              {savedKey ? (
-                <button
-                  type="button"
-                  onClick={handleRemoveKey}
-                  className="text-xs font-semibold text-rose-500 hover:underline cursor-pointer"
-                >
-                  Clear Config
+                <button type="submit" className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 cursor-pointer">
+                  <Lock className="h-4 w-4" /> Pay {selectedPlan?.price}
                 </button>
-              ) : (
-                <span />
-              )}
-              <div className="flex gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setShowSettings(false)}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveKey}
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer"
-                >
-                  Save Config
-                </button>
+              </form>
+            ) : (
+              <div className="text-center py-4 space-y-4">
+                <div className="mx-auto w-10 h-10 rounded-full bg-emerald-50 text-emerald-500 border border-emerald-100 flex items-center justify-center">
+                  <Check className="h-5 w-5" />
+                </div>
+                <h4 className="font-bold text-slate-800">Transaction Complete!</h4>
+                <p className="text-xs text-slate-500">Your mock premium features are now unlocked.</p>
+                <button onClick={() => setShowPaymentModal(false)} className="px-5 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold">Return</button>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1674,10 +1628,6 @@ function MaterialList({ courseId, reloadTrigger }: MaterialListProps) {
   const handleDeleteMaterial = async (id: string) => {
     if (!confirm("Remove this document?")) return;
     try {
-      const response = await fetch(`/api/courses/${courseId}/materials?materialId=${id}`, {
-        method: "DELETE" // Wait, we can implement local Db deletion directly
-      });
-      // In db.ts deleteMaterial is implemented. Let's make an API route or delete directly.
       const res = await fetch(`/api/materials/upload?id=${id}`, {
         method: "DELETE"
       });
@@ -1695,7 +1645,7 @@ function MaterialList({ courseId, reloadTrigger }: MaterialListProps) {
 
   if (materials.length === 0) {
     return (
-      <div className="p-8 text-center border border-slate-200 bg-white rounded-2xl text-xs text-slate-400">
+      <div className="p-8 text-center border border-slate-200 bg-white rounded-2xl text-xs text-slate-450">
         No documents uploaded for this course yet.
       </div>
     );
@@ -1735,7 +1685,7 @@ function MaterialList({ courseId, reloadTrigger }: MaterialListProps) {
 
             <button
               onClick={() => handleDeleteMaterial(mat.id)}
-              className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-slate-50 cursor-pointer"
+              className="p-1 rounded text-slate-450 hover:text-rose-500 hover:bg-slate-50 cursor-pointer"
             >
               <Trash2 className="h-4.5 w-4.5" />
             </button>
