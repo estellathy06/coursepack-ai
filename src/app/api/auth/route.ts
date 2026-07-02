@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing action parameter" }, { status: 400 });
     }
 
-    if (action === "register") {
+    if (action === "register" || action === "signup") {
       if (!email || !password || !name) {
         return NextResponse.json({ error: "Missing registration fields (email, password, name)" }, { status: 400 });
       }
