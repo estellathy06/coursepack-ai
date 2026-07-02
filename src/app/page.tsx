@@ -403,8 +403,10 @@ export default function Page() {
     e.preventDefault();
     if (!currentUser) return;
 
-    if (!newCourseCode || !newCourseCode.trim()) {
-      alert("Please enter a course code.");
+    const resolvedCourseCode = newCourseCode === "custom" ? newCourseName.trim() : newCourseCode.trim();
+
+    if (!resolvedCourseCode) {
+      alert("Please select or enter a course code.");
       return;
     }
 
@@ -421,7 +423,7 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: currentUser.id,
-          courseCode: newCourseCode.trim(),
+          courseCode: resolvedCourseCode,
           examDate: resolvedExamDate || undefined,
           targetScore: newTargetScore,
           dailyAvailableHours: Number(newDailyHours),
@@ -435,6 +437,7 @@ export default function Page() {
       }
 
       setNewCourseCode("");
+      setNewCourseName("");
       setDaysTillExam("");
       setShowAddCourse(false);
       
@@ -1942,14 +1945,28 @@ export default function Page() {
                   <span>Course Code *</span>
                   <span className="text-[8px] text-blue-650 font-bold lowercase">Mandatory</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   required
-                  placeholder="e.g. ECON 101"
                   value={newCourseCode}
                   onChange={(e) => setNewCourseCode(e.target.value)}
                   className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-770"
-                />
+                >
+                  <option value="">-- Select Course Code --</option>
+                  {uniqueCourses.map((c) => (
+                    <option key={c.courseCode} value={c.courseCode}>{c.courseCode}</option>
+                  ))}
+                  <option value="custom">+ Add custom course code...</option>
+                </select>
+                {newCourseCode === "custom" && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. ECON 101"
+                    value={newCourseName}
+                    onChange={(e) => setNewCourseName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-770 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="space-y-1">
