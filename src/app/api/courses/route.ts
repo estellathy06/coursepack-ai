@@ -16,10 +16,24 @@ export async function GET(req: NextRequest) {
     // Get programs grouped or flat
     const programs = await db.getPrograms();
 
+    // Get unique courses across all users
+    const allCourses = await db.getAllCourses();
+    const uniqueMap = new Map<string, string>();
+    allCourses.forEach((c) => {
+      if (c.course_code) {
+        uniqueMap.set(c.course_code.toUpperCase(), c.name);
+      }
+    });
+    const uniqueCourses = Array.from(uniqueMap.entries()).map(([code, name]) => ({
+      name,
+      courseCode: code,
+    }));
+
     return NextResponse.json({
       courses,
       schools,
       programs,
+      uniqueCourses,
     });
   } catch (error: any) {
     console.error("[GET /api/courses] Error:", error);

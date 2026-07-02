@@ -45,6 +45,7 @@ export default function Page() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [uniqueCourses, setUniqueCourses] = useState<{ name: string; courseCode: string }[]>([]);
   const [analyses, setAnalyses] = useState<Record<string, CourseAnalysis | null>>({});
   const [plans, setPlans] = useState<Record<string, StudyPlan | null>>({});
   
@@ -72,6 +73,12 @@ export default function Page() {
   const [newTargetScore, setNewTargetScore] = useState("60%");
   const [newDailyHours, setNewDailyHours] = useState("2");
   const [newBaseLevel, setNewBaseLevel] = useState("average");
+
+  // New Dropdown and Days-till-Exam Form States
+  const [selectedSchoolId, setSelectedSchoolId] = useState("");
+  const [selectedProgramId, setSelectedProgramId] = useState("");
+  const [selectedCourseName, setSelectedCourseName] = useState("");
+  const [daysTillExam, setDaysTillExam] = useState("");
 
   // Upload Material Form Fields
   const [uploadCourseId, setUploadCourseId] = useState("");
@@ -138,6 +145,7 @@ export default function Page() {
       setCourses(data.courses || []);
       setSchools(data.schools || []);
       setPrograms(data.programs || []);
+      setUniqueCourses(data.uniqueCourses || []);
 
       // Fetch study plans
       const planRes = await fetch(`/api/study-plan?userId=${uid}`);
@@ -286,9 +294,50 @@ export default function Page() {
   const handleAddCourseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-    if (!newCourseName || !newCourseCode) {
-      alert("Please fill in the course name and code.");
+
+    if (!newCourseCode || !newCourseCode.trim()) {
+      alert("Please enter a course code.");
       return;
+    }
+
+    // Resolve School Name
+    let resolvedSchoolName = "";
+    if (selectedSchoolId === "custom") {
+      resolvedSchoolName = newSchoolName.trim();
+    } else if (selectedSchoolId) {
+      resolvedSchoolName = schools.find((s) => s.id === selectedSchoolId)?.name || "";
+    }
+
+    if (!resolvedSchoolName) {
+      alert("Please select or enter a university/school.");
+      return;
+    }
+
+    // Resolve Program Name
+    let resolvedProgramName = "";
+    if (selectedProgramId === "custom") {
+      resolvedProgramName = newProgramName.trim();
+    } else if (selectedProgramId) {
+      resolvedProgramName = programs.find((p) => p.id === selectedProgramId)?.name || "";
+    }
+
+    // Resolve Course Name (defaults to Course Code if empty)
+    let resolvedCourseName = "";
+    if (selectedCourseName === "custom") {
+      resolvedCourseName = newCourseName.trim();
+    } else if (selectedCourseName) {
+      resolvedCourseName = selectedCourseName;
+    }
+
+    if (!resolvedCourseName) {
+      resolvedCourseName = newCourseCode.trim();
+    }
+
+    // Resolve Exam Date from Days till Exam (max 14 days)
+    let resolvedExamDate = "";
+    if (daysTillExam) {
+      const days = Math.min(14, Math.max(1, Number(daysTillExam) || 1));
+      resolvedExamDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     }
 
     try {
@@ -297,11 +346,11 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: currentUser.id,
-          name: newCourseName,
-          courseCode: newCourseCode,
-          schoolName: newSchoolName,
-          programName: newProgramName,
-          examDate: newExamDate,
+          name: resolvedCourseName,
+          courseCode: newCourseCode.trim(),
+          schoolName: resolvedSchoolName,
+          programName: resolvedProgramName || undefined,
+          examDate: resolvedExamDate || undefined,
           targetScore: newTargetScore,
           dailyAvailableHours: Number(newDailyHours),
           currentLevel: newBaseLevel
@@ -317,6 +366,10 @@ export default function Page() {
       setNewSchoolName("");
       setNewProgramName("");
       setNewExamDate("");
+      setSelectedSchoolId("");
+      setSelectedProgramId("");
+      setSelectedCourseName("");
+      setDaysTillExam("");
       setShowAddCourse(false);
       
       confetti({ particleCount: 30, spread: 50 });
@@ -1597,18 +1650,41 @@ export default function Page() {
             <div className="grid md:grid-cols-2 gap-4 text-xs">
               <div className="space-y-1">
                 <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Course Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Introduction to Microeconomics"
-                  value={newCourseName}
-                  onChange={(e) => setNewCourseName(e.target.value)}
+                <select
+                  value={selectedCourseName}
+                  onChange={(e) => {
+                    setSelectedCourseName(e.target.value);
+                    if (e.target.value !== "custom") {
+                      setNewCourseName("");
+                    }
+                  }}
                   className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                />
+                >
+                  <option value="">Select existing course... (Optional)</option>
+                  {uniqueCourses.map((c, idx) => (
+                    <option key={idx} value={c.name}>
+                      {c.name} ({c.courseCode})
+                    </option>
+                  ))}
+                  <option value="custom">+ Add custom course name...</option>
+                </select>
+                {selectedCourseName === "custom" && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter custom course name"
+                    value={newCourseName}
+                    onChange={(e) => setNewCourseName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Course Code</label>
+                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
+                  <span>Course Code *</span>
+                  <span className="text-[8px] text-blue-650 font-bold lowercase">Mandatory</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -1620,34 +1696,84 @@ export default function Page() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">University / School</label>
-                <input
-                  type="text"
-                  placeholder="e.g. University of Waterloo"
-                  value={newSchoolName}
-                  onChange={(e) => setNewSchoolName(e.target.value)}
+                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
+                  <span>University / School *</span>
+                  <span className="text-[8px] text-blue-650 font-bold lowercase">Mandatory</span>
+                </label>
+                <select
+                  value={selectedSchoolId}
+                  onChange={(e) => {
+                    setSelectedSchoolId(e.target.value);
+                    if (e.target.value !== "custom") {
+                      setNewSchoolName("");
+                    }
+                  }}
                   className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                />
+                >
+                  <option value="">Select your university... (Mandatory)</option>
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                  <option value="custom">+ Add custom university/school...</option>
+                </select>
+                {selectedSchoolId === "custom" && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter custom school name"
+                    value={newSchoolName}
+                    onChange={(e) => setNewSchoolName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="space-y-1">
                 <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Program / Major</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Honours Mathematics"
-                  value={newProgramName}
-                  onChange={(e) => setNewProgramName(e.target.value)}
+                <select
+                  value={selectedProgramId}
+                  onChange={(e) => {
+                    setSelectedProgramId(e.target.value);
+                    if (e.target.value !== "custom") {
+                      setNewProgramName("");
+                    }
+                  }}
                   className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                />
+                >
+                  <option value="">Select your program... (Optional)</option>
+                  {(selectedSchoolId && selectedSchoolId !== "custom"
+                    ? programs.filter((p) => p.school_id === selectedSchoolId)
+                    : programs
+                  ).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                  <option value="custom">+ Add custom program/major...</option>
+                </select>
+                {selectedProgramId === "custom" && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter custom program name"
+                    value={newProgramName}
+                    onChange={(e) => setNewProgramName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 mt-1.5"
+                  />
+                )}
               </div>
 
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Exam Date</label>
+                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Days till Exam (Max 14)</label>
                 <input
-                  type="date"
-                  required
-                  value={newExamDate}
-                  onChange={(e) => setNewExamDate(e.target.value)}
+                  type="number"
+                  min="1"
+                  max="14"
+                  placeholder="e.g. 7 (Optional)"
+                  value={daysTillExam}
+                  onChange={(e) => setDaysTillExam(e.target.value)}
                   className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
                 />
               </div>

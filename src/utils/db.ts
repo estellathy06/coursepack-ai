@@ -380,6 +380,22 @@ export const db = {
     }
   },
 
+  async getAllCourses(): Promise<Course[]> {
+    const config = getSupabaseConfig();
+    if (config) {
+      try {
+        const res = await supabaseFetch("courses?select=*");
+        return await res.json();
+      } catch (err) {
+        console.error("Error fetching all courses from Supabase:", err);
+        return [];
+      }
+    } else {
+      const data = await readLocalDb();
+      return data.courses || [];
+    }
+  },
+
   async createCourse(course: Omit<Course, "id" | "created_at">): Promise<Course> {
     const config = getSupabaseConfig();
     if (config) {
