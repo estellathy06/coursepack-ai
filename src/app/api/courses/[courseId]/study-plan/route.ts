@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/utils/db";
+import { normalizeCourseCode, normalizeStudyTime, generateCacheKey } from "@/utils/cache-helper";
 
 const studyPlanResponseSchema: any = {
   type: "object",
@@ -82,28 +83,54 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // 2. Cache Check: Check if a similar study plan is already cached across matching courses in the system
-    const matchingCourseIds = await db.getMatchingCourseIds(courseId);
-    const allPlans = await db.getStudyPlansForCourses(matchingCourseIds);
+    // 2. Cache Check: Check if a similar study plan is already cached across matching courses in the system using deterministic keys
+    const currentCourse = await db.getCourse(courseId);
+    if (!currentCourse) {
+      return NextResponse.json({ error: "Course not found" }, { status: 404 });
+    }
 
-    const cachedPlan = allPlans.find(
-      (p) =>
-        !forceRegenerate &&
-        p.target_score === targetScore &&
-        p.days_remaining === Number(daysRemaining) &&
-        p.daily_available_hours === Number(dailyAvailableHours) &&
-        p.generated_from_analysis_version === analysis.analysis_version
-    );
+    const normHours = normalizeStudyTime(dailyAvailableHours);
+    const normDays = Number(daysRemaining);
 
-    if (cachedPlan) {
-      console.log(`[Study Plan] Shared Cache hit. Returning cached plan version ${analysis.analysis_version} from course ${cachedPlan.course_id}`);
-      // Ensure target parameters are updated for this specific student's course
+    const cacheKeyVariables = {
+      course_code: normalizeCourseCode(currentCourse.course_code),
+      school_id: currentCourse.school_id || null,
+      semester: "current_semester",
+      exam_type: "final",
+      target_score: targetScore,
+      days_remaining: normDays,
+      daily_available_hours: normHours,
+      course_profile_version: analysis.analysis_version,
+      output_type: "study_plan"
+    };
+
+    const cacheKey = generateCacheKey(cacheKeyVariables);
+
+    // Check deterministic cache
+    const deterministicCache = await db.getCachedOutput(cacheKey);
+    if (deterministicCache && !forceRegenerate) {
+      console.log(`[Deterministic Cache] Hit. Reusing cached study plan for course ${courseId}.`);
+      
+      const parsedPlan = deterministicCache.output_json;
+      
+      // Save it locally for this user's courseId
+      const savedPlan = await db.saveStudyPlan({
+        user_id: userId,
+        course_id: courseId,
+        target_score: targetScore,
+        days_remaining: normDays,
+        daily_available_hours: normHours,
+        plan_json: parsedPlan,
+        generated_from_analysis_version: analysis.analysis_version
+      });
+
       await db.updateCourse(courseId, {
         target_score: targetScore,
-        daily_available_hours: Number(dailyAvailableHours),
+        daily_available_hours: normHours,
         current_level: currentLevel,
       });
-      return NextResponse.json({ success: true, plan: cachedPlan });
+
+      return NextResponse.json({ success: true, plan: savedPlan });
     }
 
     // 3. Resolve API Key
@@ -186,6 +213,23 @@ Generate a structured study plan JSON.`;
       daily_available_hours: Number(dailyAvailableHours),
       current_level: currentLevel,
     });
+
+    // Save to global deterministic cache
+    try {
+      await db.saveCachedOutput({
+        cache_key: cacheKey,
+        course_code: normalizeCourseCode(currentCourse.course_code),
+        school_id: currentCourse.school_id || undefined,
+        output_type: "study_plan",
+        output_json: planJson,
+        input_variables: cacheKeyVariables,
+        model_version: "gemini-1.5-pro",
+        prompt_version: "v1.0",
+        course_profile_version: analysis.analysis_version
+      });
+    } catch (cacheErr) {
+      console.error("Failed to write study plan to deterministic cached_outputs:", cacheErr);
+    }
 
     return NextResponse.json({ success: true, plan: savedPlan });
   } catch (error: any) {

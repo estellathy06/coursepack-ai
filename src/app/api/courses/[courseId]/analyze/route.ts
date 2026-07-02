@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/utils/db";
+import { normalizeCourseCode, generateCacheKey } from "@/utils/cache-helper";
 
 const analysisResponseSchema: any = {
   type: "object",
@@ -179,10 +180,55 @@ export async function POST(
       return NextResponse.json({ error: "No course materials uploaded. Please upload syllabus or lecture notes first." }, { status: 400 });
     }
 
-    // Check if an analysis already exists for matching courses with the same material IDs
-    const existingAnalysis = await db.getCourseAnalysis(courseId);
     const currentMaterialIds = materials.map((m) => m.id);
 
+    // Get Course Code/Name for context
+    const courseInfo = await db.getCourse(courseId) || { course_code: "GEN-101", name: "Current Course", school_id: null };
+
+    // Deterministic Cache Key Generation
+    const sortedMaterialHashes = materials
+      .map((m) => m.hash || "")
+      .filter(Boolean)
+      .sort();
+
+    const cacheKeyVariables = {
+      course_code: normalizeCourseCode(courseInfo.course_code),
+      school_id: courseInfo.school_id || null,
+      semester: "current_semester",
+      exam_type: "final",
+      material_hashes: sortedMaterialHashes,
+      output_type: "analysis"
+    };
+
+    const cacheKey = generateCacheKey(cacheKeyVariables);
+
+    // 1. Check global deterministic cache
+    const deterministicCache = await db.getCachedOutput(cacheKey);
+    if (deterministicCache && !forceRegenerate) {
+      console.log(`[Deterministic Cache] Hit. Reusing analysis cache for course ${courseId}.`);
+      
+      const parsedAnalysis = deterministicCache.output_json;
+      const existingAnalysis = await db.getCourseAnalysis(courseId);
+      const nextVersion = existingAnalysis ? existingAnalysis.analysis_version + 1 : 1;
+      
+      const savedAnalysis = await db.saveCourseAnalysis({
+        course_id: courseId,
+        summary: parsedAnalysis.courseSummary || parsedAnalysis.summary || "No summary generated",
+        extracted_topics: parsedAnalysis.topics || parsedAnalysis.extracted_topics || [],
+        topic_frequency: parsedAnalysis.topicFrequency || parsedAnalysis.topic_frequency || [],
+        predicted_exam_topics: parsedAnalysis.predictedExamTopics || parsedAnalysis.predicted_exam_topics || [],
+        question_bank: parsedAnalysis.questionBank || parsedAnalysis.question_bank || { quiz: [], activeRecall: [], definitions: [], weakSpots: [] },
+        difficulty_breakdown: parsedAnalysis.difficultyBreakdown || parsedAnalysis.difficulty_breakdown || { difficultyLevels: { Easy: 0, Medium: 0, Hard: 0 }, recommendedPriority: [] },
+        source_material_ids: currentMaterialIds,
+        analysis_version: nextVersion
+      });
+
+      await db.updateCourse(courseId, { review_status: "Ready" });
+      return NextResponse.json({ success: true, analysis: savedAnalysis });
+    }
+
+    // 2. Legacy/Fallback Up-To-Date check
+    const existingAnalysis = await db.getCourseAnalysis(courseId);
     if (existingAnalysis && !forceRegenerate) {
       const cachedMaterialIds = existingAnalysis.source_material_ids || [];
       const isUpToDate = currentMaterialIds.every((id) => cachedMaterialIds.includes(id)) &&
@@ -190,14 +236,10 @@ export async function POST(
       
       if (isUpToDate) {
         console.log(`[Ingestion] Cache hit. Reusing existing analysis for course ${courseId}.`);
-        // Ensure this user's specific course status is updated to Ready too
         await db.updateCourse(courseId, { review_status: "Ready" });
         return NextResponse.json({ success: true, analysis: existingAnalysis });
       }
     }
-
-    // Get Course Code/Name for context
-    const courseInfo = await db.getCourse(courseId) || { course_code: "GEN-101", name: "Current Course" };
 
     // Concatenate material text
     const aggregatedText = materials.map((m) => `Material Name: ${m.name}\nType: ${m.material_type}\nText:\n${m.text}\n=== END OF MATERIAL ===`).join("\n\n");
@@ -281,6 +323,22 @@ Generate a structured course analysis JSON according to the schema.`;
 
     // Update course review status to Ready
     await db.updateCourse(courseId, { review_status: "Ready" });
+
+    // Save to global deterministic cache
+    try {
+      await db.saveCachedOutput({
+        cache_key: cacheKey,
+        course_code: normalizeCourseCode(courseInfo.course_code),
+        school_id: courseInfo.school_id || undefined,
+        output_type: "analysis",
+        output_json: parsedJson,
+        input_variables: cacheKeyVariables,
+        model_version: "gemini-1.5-flash",
+        prompt_version: "v1.0"
+      });
+    } catch (cacheErr) {
+      console.error("Failed to write to deterministic cached_outputs:", cacheErr);
+    }
 
     return NextResponse.json({ success: true, analysis: savedAnalysis });
   } catch (error: any) {

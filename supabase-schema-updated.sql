@@ -86,6 +86,21 @@ CREATE TABLE IF NOT EXISTS study_plans (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+-- Table 7: Cached Outputs (Deterministic Caching)
+CREATE TABLE IF NOT EXISTS cached_outputs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cache_key TEXT UNIQUE NOT NULL,
+  course_code TEXT NOT NULL,
+  school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+  output_type TEXT NOT NULL, -- 'analysis' or 'study_plan'
+  output_json JSONB NOT NULL,
+  input_variables JSONB NOT NULL,
+  model_version TEXT NOT NULL,
+  prompt_version TEXT,
+  course_profile_version INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
 -- Enable RLS and create public policies (or REST API bypass policies)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
@@ -94,6 +109,7 @@ ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_analyses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cached_outputs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public select on users" ON users FOR SELECT USING (true);
 CREATE POLICY "Allow public insert on users" ON users FOR INSERT WITH CHECK (true);
@@ -121,3 +137,7 @@ CREATE POLICY "Allow public update on course_analyses" ON course_analyses FOR UP
 CREATE POLICY "Allow public select on study_plans" ON study_plans FOR SELECT USING (true);
 CREATE POLICY "Allow public insert on study_plans" ON study_plans FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update on study_plans" ON study_plans FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public select on cached_outputs" ON cached_outputs FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on cached_outputs" ON cached_outputs FOR INSERT WITH CHECK (true);
+

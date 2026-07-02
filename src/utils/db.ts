@@ -62,6 +62,20 @@ export interface CourseAnalysis {
   created_at: string;
 }
 
+export interface CachedOutput {
+  id: string;
+  cache_key: string;
+  course_code: string;
+  school_id?: string;
+  output_type: string; // 'analysis' or 'study_plan'
+  output_json: any;
+  input_variables: any;
+  model_version: string;
+  prompt_version?: string;
+  course_profile_version?: number;
+  created_at: string;
+}
+
 export interface StudyPlan {
   id: string;
   user_id: string;
@@ -107,6 +121,7 @@ interface LocalDbSchema {
   course_analyses: CourseAnalysis[];
   study_plans: StudyPlan[];
   users: UserAccount[];
+  cached_outputs?: CachedOutput[];
 }
 
 const initializeLocalDb = async (dbPath: string): Promise<LocalDbSchema> => {
@@ -118,6 +133,7 @@ const initializeLocalDb = async (dbPath: string): Promise<LocalDbSchema> => {
     course_analyses: [],
     study_plans: [],
     users: [],
+    cached_outputs: [],
   };
   try {
     await fs.mkdir(path.dirname(dbPath), { recursive: true });
@@ -147,6 +163,7 @@ const readLocalDb = async (): Promise<LocalDbSchema> => {
       course_analyses: [],
       study_plans: [],
       users: [],
+      cached_outputs: [],
     };
   }
 };
@@ -729,6 +746,49 @@ export const db = {
             (c.program_id || null) === (programId || null)
         )
         .map((c) => c.id);
+    }
+  },
+
+  async getCachedOutput(cacheKey: string): Promise<CachedOutput | null> {
+    const config = getSupabaseConfig();
+    if (config) {
+      try {
+        const res = await supabaseFetch(`cached_outputs?cache_key=eq.${cacheKey}&select=*`);
+        const list = await res.json();
+        return list && list.length > 0 ? list[0] : null;
+      } catch (err) {
+        console.error("Error fetching cached output from Supabase:", err);
+        return null;
+      }
+    } else {
+      const data = await readLocalDb();
+      if (!data.cached_outputs) data.cached_outputs = [];
+      const cached = data.cached_outputs.find((o) => o.cache_key === cacheKey);
+      return cached || null;
+    }
+  },
+
+  async saveCachedOutput(output: Omit<CachedOutput, "id" | "created_at">): Promise<CachedOutput> {
+    const config = getSupabaseConfig();
+    if (config) {
+      const res = await supabaseFetch("cached_outputs", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(output),
+      });
+      const inserted = await res.json();
+      return inserted[0];
+    } else {
+      const data = await readLocalDb();
+      if (!data.cached_outputs) data.cached_outputs = [];
+      const newOutput: CachedOutput = {
+        ...output,
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString(),
+      };
+      data.cached_outputs.push(newOutput);
+      await writeLocalDb(data);
+      return newOutput;
     }
   },
 
