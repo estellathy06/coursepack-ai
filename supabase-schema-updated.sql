@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT, -- Nullable for Google OAuth
   name TEXT NOT NULL,
   avatar_url TEXT,
+  school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+  program_id UUID REFERENCES programs(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 

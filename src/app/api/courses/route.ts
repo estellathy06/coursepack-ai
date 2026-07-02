@@ -45,38 +45,28 @@ export async function POST(req: NextRequest) {
   try {
     const {
       userId,
-      name,
       courseCode,
-      schoolName,
-      programName,
       examDate,
       targetScore,
       dailyAvailableHours,
       currentLevel,
     } = await req.json();
 
-    if (!userId || !name || !courseCode) {
-      return NextResponse.json({ error: "Missing required fields (userId, name, courseCode)" }, { status: 400 });
+    if (!userId || !courseCode) {
+      return NextResponse.json({ error: "Missing required fields (userId, courseCode)" }, { status: 400 });
     }
 
-    let schoolId: string | undefined = undefined;
-    let programId: string | undefined = undefined;
-
-    // Handle school creation if text is provided
-    if (schoolName && schoolName.trim().length > 0) {
-      const school = await db.createSchool(schoolName.trim());
-      schoolId = school.id;
-
-      // Handle program creation under that school
-      if (programName && programName.trim().length > 0) {
-        const program = await db.createProgram(schoolId, programName.trim());
-        programId = program.id;
-      }
+    const user = await db.getUser(userId);
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
+    const schoolId = user.school_id;
+    const programId = user.program_id;
 
     const course = await db.createCourse({
       user_id: userId,
-      name: name.trim(),
+      name: courseCode.trim().toUpperCase(),
       course_code: courseCode.trim().toUpperCase(),
       school_id: schoolId,
       program_id: programId,

@@ -22,11 +22,32 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "register" || action === "signup") {
+      const { schoolId, schoolName, programId, programName } = body;
+
       if (!email || !password || !name) {
         return NextResponse.json({ error: "Missing registration fields (email, password, name)" }, { status: 400 });
       }
+
+      // Resolve School
+      let finalSchoolId = schoolId;
+      if (schoolName && schoolName.trim().length > 0) {
+        const school = await db.createSchool(schoolName.trim());
+        finalSchoolId = school.id;
+      }
+
+      if (!finalSchoolId) {
+        return NextResponse.json({ error: "Please select or enter a university/school during registration." }, { status: 400 });
+      }
+
+      // Resolve Program
+      let finalProgramId = programId;
+      if (programName && programName.trim().length > 0) {
+        const program = await db.createProgram(finalSchoolId, programName.trim());
+        finalProgramId = program.id;
+      }
+
       const hash = getPasswordHash(password);
-      const user = await db.registerUser(email, hash, name);
+      const user = await db.registerUser(email, hash, name, finalSchoolId, finalProgramId || undefined);
       return NextResponse.json({ success: true, user });
     }
 

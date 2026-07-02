@@ -27,6 +27,10 @@ export default function Page() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authName, setAuthName] = useState("");
+  const [regSchoolId, setRegSchoolId] = useState("");
+  const [regSchoolName, setRegSchoolName] = useState("");
+  const [regProgramId, setRegProgramId] = useState("");
+  const [regProgramName, setRegProgramName] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -125,6 +129,22 @@ export default function Page() {
       }
     }
 
+    // Load initial dropdown list data for registration
+    const loadInitialLists = async () => {
+      try {
+        const res = await fetch("/api/courses?userId=guest");
+        if (res.ok) {
+          const data = await res.json();
+          setSchools(data.schools || []);
+          setPrograms(data.programs || []);
+          setUniqueCourses(data.uniqueCourses || []);
+        }
+      } catch (err) {
+        console.error("Failed to load initial registration dropdown data:", err);
+      }
+    };
+    loadInitialLists();
+
     setWaitlistCount(Math.floor(Math.random() * 200) + 840);
 
     // Setup daily hours limit
@@ -200,15 +220,24 @@ export default function Page() {
     setAuthLoading(true);
     setGenerationError(null);
     try {
+      const payload: any = {
+        action: authTab,
+        email: authEmail,
+        password: authPassword,
+        name: authName
+      };
+
+      if (authTab === 'signup') {
+        payload.schoolId = regSchoolId === "custom" ? "" : regSchoolId;
+        payload.schoolName = regSchoolId === "custom" ? regSchoolName : "";
+        payload.programId = regProgramId === "custom" ? "" : regProgramId;
+        payload.programName = regProgramId === "custom" ? regProgramName : "";
+      }
+
       const response = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: authTab,
-          email: authEmail,
-          password: authPassword,
-          name: authName
-        })
+        body: JSON.stringify(payload)
       });
 
       const resData = await response.json();
@@ -300,39 +329,6 @@ export default function Page() {
       return;
     }
 
-    // Resolve School Name
-    let resolvedSchoolName = "";
-    if (selectedSchoolId === "custom") {
-      resolvedSchoolName = newSchoolName.trim();
-    } else if (selectedSchoolId) {
-      resolvedSchoolName = schools.find((s) => s.id === selectedSchoolId)?.name || "";
-    }
-
-    if (!resolvedSchoolName) {
-      alert("Please select or enter a university/school.");
-      return;
-    }
-
-    // Resolve Program Name
-    let resolvedProgramName = "";
-    if (selectedProgramId === "custom") {
-      resolvedProgramName = newProgramName.trim();
-    } else if (selectedProgramId) {
-      resolvedProgramName = programs.find((p) => p.id === selectedProgramId)?.name || "";
-    }
-
-    // Resolve Course Name (defaults to Course Code if empty)
-    let resolvedCourseName = "";
-    if (selectedCourseName === "custom") {
-      resolvedCourseName = newCourseName.trim();
-    } else if (selectedCourseName) {
-      resolvedCourseName = selectedCourseName;
-    }
-
-    if (!resolvedCourseName) {
-      resolvedCourseName = newCourseCode.trim();
-    }
-
     // Resolve Exam Date from Days till Exam (max 14 days)
     let resolvedExamDate = "";
     if (daysTillExam) {
@@ -346,10 +342,7 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: currentUser.id,
-          name: resolvedCourseName,
           courseCode: newCourseCode.trim(),
-          schoolName: resolvedSchoolName,
-          programName: resolvedProgramName || undefined,
           examDate: resolvedExamDate || undefined,
           targetScore: newTargetScore,
           dailyAvailableHours: Number(newDailyHours),
@@ -357,18 +350,12 @@ export default function Page() {
         })
       });
 
+      const resData = await response.json();
       if (!response.ok) {
-        throw new Error("Failed to add course");
+        throw new Error(resData.error || "Failed to add course");
       }
 
-      setNewCourseName("");
       setNewCourseCode("");
-      setNewSchoolName("");
-      setNewProgramName("");
-      setNewExamDate("");
-      setSelectedSchoolId("");
-      setSelectedProgramId("");
-      setSelectedCourseName("");
       setDaysTillExam("");
       setShowAddCourse(false);
       
@@ -842,17 +829,83 @@ export default function Page() {
                         {/* Traditional Form */}
                         <form onSubmit={handleAuthSubmit} className="space-y-3.5 text-xs text-left">
                           {authTab === 'signup' && (
-                            <div className="space-y-1">
-                              <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Full Name</label>
-                              <input
-                                type="text"
-                                required
-                                placeholder="Jane Doe"
-                                value={authName}
-                                onChange={(e) => setAuthName(e.target.value)}
-                                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750"
-                              />
-                            </div>
+                            <>
+                              <div className="space-y-1">
+                                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Full Name</label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="Jane Doe"
+                                  value={authName}
+                                  onChange={(e) => setAuthName(e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750"
+                                />
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">University / School</label>
+                                <select
+                                  required
+                                  value={regSchoolId}
+                                  onChange={(e) => {
+                                    setRegSchoolId(e.target.value);
+                                    if (e.target.value !== "custom") {
+                                      setRegSchoolName("");
+                                    }
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750"
+                                >
+                                  <option value="">-- Select University --</option>
+                                  {schools.map((s) => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                  ))}
+                                  <option value="custom">+ Add custom university...</option>
+                                </select>
+                                {regSchoolId === "custom" && (
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="Enter custom university name"
+                                    value={regSchoolName}
+                                    onChange={(e) => setRegSchoolName(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750 mt-1.5"
+                                  />
+                                )}
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Major / Program</label>
+                                <select
+                                  required
+                                  value={regProgramId}
+                                  onChange={(e) => {
+                                    setRegProgramId(e.target.value);
+                                    if (e.target.value !== "custom") {
+                                      setRegProgramName("");
+                                    }
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750"
+                                >
+                                  <option value="">-- Select Major/Program --</option>
+                                  {programs
+                                    .filter((p) => !regSchoolId || regSchoolId === "custom" || p.school_id === regSchoolId)
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                  <option value="custom">+ Add custom major...</option>
+                                </select>
+                                {regProgramId === "custom" && (
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="Enter custom major name"
+                                    value={regProgramName}
+                                    onChange={(e) => setRegProgramName(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-slate-750 mt-1.5"
+                                  />
+                                )}
+                              </div>
+                            </>
                           )}
 
                           <div className="space-y-1">
@@ -1210,8 +1263,8 @@ export default function Page() {
                               </span>
                             </div>
 
-                            <h3 className="font-bold text-slate-805 text-xs truncate">{course.name}</h3>
-                            <p className="text-[10px] text-slate-400 truncate">{course.school_name} • {course.program_name}</p>
+                            <h3 className="font-bold text-slate-850 text-xs truncate">{course.school_name || course.name}</h3>
+                            <p className="text-[10px] text-slate-400 truncate">{course.program_name || "General Major"}</p>
 
                             <div className="grid grid-cols-2 gap-2 border-t border-b border-slate-100 py-2 text-xs">
                               <div>
@@ -1273,7 +1326,7 @@ export default function Page() {
                       >
                         <option value="">-- Choose Course --</option>
                         {courses.map((c) => (
-                          <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
+                          <option key={c.id} value={c.id}>{c.course_code}</option>
                         ))}
                       </select>
                     </div>
@@ -1355,7 +1408,7 @@ export default function Page() {
                       className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-705 focus:outline-none"
                     >
                       {courses.map((c) => (
-                        <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
+                        <option key={c.id} value={c.id}>{c.course_code}</option>
                       ))}
                     </select>
                   </div>
@@ -1414,7 +1467,7 @@ export default function Page() {
                       className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-705 focus:outline-none"
                     >
                       {courses.map((c) => (
-                        <option key={c.id} value={c.id}>{c.course_code}: {c.name}</option>
+                        <option key={c.id} value={c.id}>{c.course_code}</option>
                       ))}
                     </select>
                   </div>
@@ -1649,38 +1702,6 @@ export default function Page() {
 
             <div className="grid md:grid-cols-2 gap-4 text-xs">
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Course Name</label>
-                <select
-                  value={selectedCourseName}
-                  onChange={(e) => {
-                    setSelectedCourseName(e.target.value);
-                    if (e.target.value !== "custom") {
-                      setNewCourseName("");
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                >
-                  <option value="">Select existing course... (Optional)</option>
-                  {uniqueCourses.map((c, idx) => (
-                    <option key={idx} value={c.name}>
-                      {c.name} ({c.courseCode})
-                    </option>
-                  ))}
-                  <option value="custom">+ Add custom course name...</option>
-                </select>
-                {selectedCourseName === "custom" && (
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter custom course name"
-                    value={newCourseName}
-                    onChange={(e) => setNewCourseName(e.target.value)}
-                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 mt-1.5"
-                  />
-                )}
-              </div>
-
-              <div className="space-y-1">
                 <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
                   <span>Course Code *</span>
                   <span className="text-[8px] text-blue-650 font-bold lowercase">Mandatory</span>
@@ -1691,78 +1712,8 @@ export default function Page() {
                   placeholder="e.g. ECON 101"
                   value={newCourseCode}
                   onChange={(e) => setNewCourseCode(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
+                  className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-770"
                 />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
-                  <span>University / School *</span>
-                  <span className="text-[8px] text-blue-650 font-bold lowercase">Mandatory</span>
-                </label>
-                <select
-                  value={selectedSchoolId}
-                  onChange={(e) => {
-                    setSelectedSchoolId(e.target.value);
-                    if (e.target.value !== "custom") {
-                      setNewSchoolName("");
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                >
-                  <option value="">Select your university... (Mandatory)</option>
-                  {schools.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                  <option value="custom">+ Add custom university/school...</option>
-                </select>
-                {selectedSchoolId === "custom" && (
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter custom school name"
-                    value={newSchoolName}
-                    onChange={(e) => setNewSchoolName(e.target.value)}
-                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 mt-1.5"
-                  />
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Program / Major</label>
-                <select
-                  value={selectedProgramId}
-                  onChange={(e) => {
-                    setSelectedProgramId(e.target.value);
-                    if (e.target.value !== "custom") {
-                      setNewProgramName("");
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700"
-                >
-                  <option value="">Select your program... (Optional)</option>
-                  {(selectedSchoolId && selectedSchoolId !== "custom"
-                    ? programs.filter((p) => p.school_id === selectedSchoolId)
-                    : programs
-                  ).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                  <option value="custom">+ Add custom program/major...</option>
-                </select>
-                {selectedProgramId === "custom" && (
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter custom program name"
-                    value={newProgramName}
-                    onChange={(e) => setNewProgramName(e.target.value)}
-                    className="w-full bg-white border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 text-slate-700 mt-1.5"
-                  />
-                )}
               </div>
 
               <div className="space-y-1">

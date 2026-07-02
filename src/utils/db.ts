@@ -95,6 +95,8 @@ export interface UserAccount {
   password_hash?: string;
   name: string;
   avatar_url?: string;
+  school_id?: string;
+  program_id?: string;
   created_at: string;
 }
 
@@ -851,7 +853,13 @@ export const db = {
   },
 
   // Users
-  async registerUser(email: string, passwordHash: string, name: string): Promise<UserAccount> {
+  async registerUser(
+    email: string,
+    passwordHash: string,
+    name: string,
+    schoolId?: string,
+    programId?: string
+  ): Promise<UserAccount> {
     const config = getSupabaseConfig();
     const timestamp = new Date().toISOString();
     const trimmedEmail = email.trim().toLowerCase();
@@ -871,6 +879,8 @@ export const db = {
             email: trimmedEmail,
             password_hash: passwordHash,
             name: name.trim(),
+            school_id: schoolId || null,
+            program_id: programId || null,
           }),
         });
         const inserted = await res.json();
@@ -891,6 +901,8 @@ export const db = {
         email: trimmedEmail,
         password_hash: passwordHash,
         name: name.trim(),
+        school_id: schoolId || undefined,
+        program_id: programId || undefined,
         created_at: timestamp,
       };
       data.users.push(newUser);
