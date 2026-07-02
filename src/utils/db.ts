@@ -1028,9 +1028,9 @@ export const db = {
         });
         const list = await res.json();
         return list && list.length > 0 ? list[0] : null;
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error updating user profile in Supabase:", err);
-        return null;
+        throw new Error(err.message || "Failed to update user profile in Supabase.");
       }
     } else {
       const data = await readLocalDb();
