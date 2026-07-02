@@ -694,77 +694,29 @@ export default function Page() {
                   </div>
                 </section>
 
-                {/* Pricing Sections */}
-                <section className="py-8 border-t border-slate-200 space-y-10">
+                {/* Public Testing Sandbox Notice */}
+                <section className="py-8 border-t border-slate-200 space-y-6">
                   <div className="text-center space-y-1.5">
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Pricing Plans</h3>
-                    <h2 className="text-2xl font-extrabold text-slate-900">Premium study options on any budget</h2>
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-blue-600">Public Beta Sandbox</h3>
+                    <h2 className="text-2xl font-extrabold text-slate-900">Free sandbox access active</h2>
                   </div>
 
-                  <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-                    <div className="quill-card rounded-2xl p-6 border border-slate-200 flex flex-col justify-between space-y-6 bg-white shadow-sm text-left">
-                      <div className="space-y-3.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Trial Pack</span>
-                        <h4 className="text-base font-bold text-slate-800">Template Demos</h4>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-extrabold text-slate-800">$0</span>
-                          <span className="text-slate-400 text-xs">Free</span>
-                        </div>
-                        <ul className="space-y-2 text-xs text-slate-500">
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> Full access to sample courses</li>
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> 3D Flashcards & Recall tabs</li>
-                        </ul>
-                      </div>
-                      <button
-                        onClick={() => handleLoadDemo("CS136")}
-                        className="w-full py-2 bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-100 cursor-pointer"
-                      >
-                        Try CS 136 Free
-                      </button>
+                  <div className="max-w-2xl mx-auto bg-blue-50/50 border border-blue-200 rounded-2xl p-6 md:p-8 text-center space-y-4 shadow-sm">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                      <Zap className="h-5 w-5 animate-pulse" />
                     </div>
-
-                    <div className="quill-card rounded-2xl p-6 border-2 border-blue-500 flex flex-col justify-between space-y-6 bg-white shadow-md text-left">
-                      <div className="space-y-3.5">
-                        <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">Standard</span>
-                        <h4 className="text-base font-bold text-slate-800">Single Exam Pack</h4>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-extrabold text-slate-800">$5.99</span>
-                          <span className="text-slate-400 text-xs">per course</span>
-                        </div>
-                        <ul className="space-y-2 text-xs text-slate-600">
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600" /> Upload custom slide and notes</li>
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600" /> Custom 7-day study cram checklist</li>
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-600" /> Final exam probability predictions</li>
-                        </ul>
-                      </div>
-                      <button
-                        disabled={checkoutLoading}
-                        onClick={() => triggerStripeCheckout("single")}
-                        className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 cursor-pointer"
-                      >
-                        Unlock Custom Course
-                      </button>
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-slate-800 text-sm">Testing Active Until December 2026</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        CoursePack AI is currently free of charge. You can upload slide notes, generate countdown cram calendars, and view exam predictions without limits using active sandbox tokens and API credentials.
+                      </p>
                     </div>
-
-                    <div className="quill-card rounded-2xl p-6 border border-slate-200 flex flex-col justify-between space-y-6 bg-white shadow-sm text-left">
-                      <div className="space-y-3.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Semester bundle</span>
-                        <h4 className="text-base font-bold text-slate-800">Semester Pass</h4>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-extrabold text-slate-800">$12.99</span>
-                          <span className="text-slate-400 text-xs">/ month</span>
-                        </div>
-                        <ul className="space-y-2 text-xs text-slate-500">
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> Manage up to 5 courses simultaneously</li>
-                          <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-blue-500" /> Priority fast-lane AI generations</li>
-                        </ul>
-                      </div>
+                    <div className="pt-2">
                       <button
-                        disabled={checkoutLoading}
-                        onClick={() => triggerStripeCheckout("semester")}
-                        className="w-full py-2 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-200 cursor-pointer"
+                        onClick={() => setCurrentNavTab('courses')}
+                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all cursor-pointer"
                       >
-                        Buy Semester Pass
+                        Start Adding Courses Now
                       </button>
                     </div>
                   </div>
@@ -1371,14 +1323,11 @@ export default function Page() {
                   <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     <div>
                       <span className="text-[9px] font-bold text-slate-450 uppercase block font-mono">CURRENT PLAN</span>
-                      <span className="font-bold text-slate-800 text-sm">Free Trial Version</span>
+                      <span className="font-bold text-slate-800 text-sm">Free Sandbox Access</span>
                     </div>
-                    <button
-                      onClick={() => triggerStripeCheckout("semester")}
-                      className="px-3.5 py-1.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 cursor-pointer"
-                    >
-                      Upgrade plan
-                    </button>
+                    <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold rounded text-[10px] uppercase font-mono">
+                      Active Testing
+                    </span>
                   </div>
                 </div>
 
