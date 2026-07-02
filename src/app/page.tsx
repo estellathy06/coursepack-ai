@@ -115,6 +115,85 @@ export default function Page() {
   const pricingRef = useRef<HTMLDivElement>(null);
   const featuresRef = useRef<HTMLDivElement>(null);
 
+  // Account Settings: School/Major editor state
+  const [acctEditingSchool, setAcctEditingSchool] = useState(false);
+  const [acctSchoolId, setAcctSchoolId] = useState("");
+  const [acctSchoolName, setAcctSchoolName] = useState("");
+  const [acctProgramId, setAcctProgramId] = useState("");
+  const [acctProgramName, setAcctProgramName] = useState("");
+  const [acctSaving, setAcctSaving] = useState(false);
+  const [acctError, setAcctError] = useState("");
+  const [acctSuccess, setAcctSuccess] = useState("");
+
+  // Helper: check if school/major change is locked (within 30 days)
+  const getSchoolEditLockInfo = () => {
+    if (!currentUser?.school_updated_at) return { locked: false, nextDate: null };
+    const lastChanged = new Date(currentUser.school_updated_at).getTime();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const unlockTime = lastChanged + thirtyDaysMs;
+    if (Date.now() < unlockTime) {
+      return { locked: true, nextDate: new Date(unlockTime) };
+    }
+    return { locked: false, nextDate: null };
+  };
+
+  // Helper: resolve display name for school/program IDs
+  const getSchoolName = (id?: string) => schools.find((s) => s.id === id)?.name || "Not set";
+  const getProgramName = (id?: string) => programs.find((p) => p.id === id)?.name || "Not set";
+
+  // Handler: save school/major changes
+  const handleSaveSchoolProgram = async () => {
+    if (!currentUser) return;
+    setAcctSaving(true);
+    setAcctError("");
+    setAcctSuccess("");
+
+    try {
+      const payload: Record<string, string> = {
+        action: "update-profile",
+        userId: currentUser.id,
+      };
+      if (acctSchoolId === "custom" && acctSchoolName.trim()) {
+        payload.schoolName = acctSchoolName.trim();
+      } else if (acctSchoolId && acctSchoolId !== "custom") {
+        payload.schoolId = acctSchoolId;
+      }
+      if (acctProgramId === "custom" && acctProgramName.trim()) {
+        payload.programName = acctProgramName.trim();
+      } else if (acctProgramId && acctProgramId !== "custom") {
+        payload.programId = acctProgramId;
+      }
+
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update profile");
+
+      // Update local user state
+      setCurrentUser(data.user);
+      localStorage.setItem("coursepack_active_user", JSON.stringify(data.user));
+      setAcctSuccess("University and major updated successfully!");
+      setAcctEditingSchool(false);
+
+      // Refresh schools/programs lists in case new ones were created
+      try {
+        const schoolsRes = await fetch("/api/courses?type=schools");
+        const schoolsData = await schoolsRes.json();
+        if (schoolsData.schools) setSchools(schoolsData.schools);
+        const programsRes = await fetch("/api/courses?type=programs");
+        const programsData = await programsRes.json();
+        if (programsData.programs) setPrograms(programsData.programs);
+      } catch { /* ignore refresh failures */ }
+    } catch (err: any) {
+      setAcctError(err.message);
+    } finally {
+      setAcctSaving(false);
+    }
+  };
+
   // 1. Initial Load & Check Login Status
   useEffect(() => {
     // Check if user session exists
@@ -1623,11 +1702,13 @@ export default function Page() {
             {/* ========================================================
                 TAB 8: ACCOUNT (SIMULATED SUBSCRIPTION & LOG OUT)
                 ======================================================== */}
-            {currentNavTab === 'account' && currentUser && (
+            {currentNavTab === 'account' && currentUser && (() => {
+              const lockInfo = getSchoolEditLockInfo();
+              return (
               <div className="space-y-6 text-left max-w-xl mx-auto">
                 <div className="border-b border-slate-200 pb-3">
-                  <h2 className="text-lg font-black text-slate-805 tracking-tight">Account Profile</h2>
-                  <p className="text-xs text-slate-400">View user session and active testing parameters.</p>
+                  <h2 className="text-lg font-black text-slate-805 tracking-tight">Account Settings</h2>
+                  <p className="text-xs text-slate-400">Manage your profile, university, and billing preferences.</p>
                 </div>
 
                 {/* Profile Card */}
@@ -1655,6 +1736,160 @@ export default function Page() {
                   </button>
                 </div>
 
+                {/* University & Major Section */}
+                <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-705 uppercase tracking-wide flex items-center gap-1.5">
+                      <GraduationCap className="h-4 w-4 text-blue-500" /> University & Major
+                    </h3>
+                    {!acctEditingSchool && (
+                      <button
+                        disabled={lockInfo.locked}
+                        onClick={() => {
+                          setAcctSchoolId(currentUser.school_id || "");
+                          setAcctProgramId(currentUser.program_id || "");
+                          setAcctSchoolName("");
+                          setAcctProgramName("");
+                          setAcctError("");
+                          setAcctSuccess("");
+                          setAcctEditingSchool(true);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                          lockInfo.locked
+                            ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                            : "bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100"
+                        }`}
+                        title={lockInfo.locked ? `Locked until ${lockInfo.nextDate?.toLocaleDateString()}` : "Change university and major"}
+                      >
+                        {lockInfo.locked ? <Lock className="h-3 w-3" /> : <Settings className="h-3 w-3" />}
+                        {lockInfo.locked ? "Locked" : "Change"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Current values display */}
+                  {!acctEditingSchool && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider">University</span>
+                        <span className="font-semibold text-slate-800 text-xs">{getSchoolName(currentUser.school_id)}</span>
+                      </div>
+                      <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider">Major / Program</span>
+                        <span className="font-semibold text-slate-800 text-xs">{getProgramName(currentUser.program_id)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Lock notice */}
+                  {!acctEditingSchool && lockInfo.locked && lockInfo.nextDate && (
+                    <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[10px] text-amber-700">
+                      <Lock className="h-3.5 w-3.5 shrink-0" />
+                      <span>You can change your university and major again on <strong>{lockInfo.nextDate.toLocaleDateString()}</strong>. Changes are allowed once per month.</span>
+                    </div>
+                  )}
+
+                  {/* Success message */}
+                  {acctSuccess && (
+                    <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] text-emerald-700">
+                      <CheckCircle className="h-3.5 w-3.5 shrink-0" />
+                      <span>{acctSuccess}</span>
+                    </div>
+                  )}
+
+                  {/* Edit form */}
+                  {acctEditingSchool && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">University / School</label>
+                        <select
+                          value={acctSchoolId}
+                          onChange={(e) => {
+                            setAcctSchoolId(e.target.value);
+                            if (e.target.value !== "custom") setAcctSchoolName("");
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-xs text-slate-750"
+                        >
+                          <option value="">-- Select University --</option>
+                          {schools.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                          <option value="custom">+ Add custom university...</option>
+                        </select>
+                        {acctSchoolId === "custom" && (
+                          <input
+                            type="text"
+                            placeholder="Enter custom university name"
+                            value={acctSchoolName}
+                            onChange={(e) => setAcctSchoolName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-xs text-slate-750 mt-1.5"
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Major / Program</label>
+                        <select
+                          value={acctProgramId}
+                          onChange={(e) => {
+                            setAcctProgramId(e.target.value);
+                            if (e.target.value !== "custom") setAcctProgramName("");
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-xs text-slate-750"
+                        >
+                          <option value="">-- Select Major/Program --</option>
+                          {programs
+                            .filter((p) => !acctSchoolId || acctSchoolId === "custom" || p.school_id === acctSchoolId)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          <option value="custom">+ Add custom major...</option>
+                        </select>
+                        {acctProgramId === "custom" && (
+                          <input
+                            type="text"
+                            placeholder="Enter custom major name"
+                            value={acctProgramName}
+                            onChange={(e) => setAcctProgramName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-blue-400 focus:outline-none rounded-xl px-3.5 py-2 text-xs text-slate-750 mt-1.5"
+                          />
+                        )}
+                      </div>
+
+                      {/* Error message */}
+                      {acctError && (
+                        <div className="flex items-center gap-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[10px] text-rose-600">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>{acctError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-[10px] text-blue-600">
+                        <Info className="h-3.5 w-3.5 shrink-0" />
+                        <span>You can only change your university and major <strong>once per month</strong>. Make sure your selections are correct.</span>
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={handleSaveSchoolProgram}
+                          disabled={acctSaving}
+                          className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                          {acctSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                          {acctSaving ? "Saving..." : "Save Changes"}
+                        </button>
+                        <button
+                          onClick={() => { setAcctEditingSchool(false); setAcctError(""); }}
+                          disabled={acctSaving}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Billing panel */}
                 <div className="quill-card p-5 border border-slate-200 bg-white rounded-2xl space-y-4 shadow-sm">
                   <h3 className="text-xs font-bold text-slate-705 uppercase tracking-wide flex items-center gap-1.5">
@@ -1673,7 +1908,8 @@ export default function Page() {
                 </div>
 
               </div>
-            )}
+              );
+            })()}
 
           </div>
         )}

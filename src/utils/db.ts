@@ -97,6 +97,7 @@ export interface UserAccount {
   avatar_url?: string;
   school_id?: string;
   program_id?: string;
+  school_updated_at?: string; // ISO timestamp of last school/program change
   created_at: string;
 }
 
@@ -1009,6 +1010,36 @@ export const db = {
       if (!data.users) data.users = [];
       const user = data.users.find((u) => u.id === userId);
       return user || null;
+    }
+  },
+
+  async updateUserProfile(
+    userId: string,
+    updates: { school_id?: string; program_id?: string; school_updated_at?: string }
+  ): Promise<UserAccount | null> {
+    const config = getSupabaseConfig();
+
+    if (config) {
+      try {
+        const res = await supabaseFetch(`users?id=eq.${userId}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(updates),
+        });
+        const list = await res.json();
+        return list && list.length > 0 ? list[0] : null;
+      } catch (err) {
+        console.error("Error updating user profile in Supabase:", err);
+        return null;
+      }
+    } else {
+      const data = await readLocalDb();
+      if (!data.users) data.users = [];
+      const idx = data.users.findIndex((u) => u.id === userId);
+      if (idx === -1) return null;
+      Object.assign(data.users[idx], updates);
+      await writeLocalDb(data);
+      return data.users[idx];
     }
   },
 };

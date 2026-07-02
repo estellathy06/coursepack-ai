@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
   program_id UUID REFERENCES programs(id) ON DELETE SET NULL,
+  school_updated_at TIMESTAMP WITH TIME ZONE, -- last time school/program was changed (null = never changed, can edit)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 

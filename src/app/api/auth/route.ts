@@ -71,6 +71,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, user });
     }
 
+    if (action === "update-profile") {
+      const { userId, schoolId, schoolName, programId, programName } = body;
+
+      if (!userId) {
+        return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+      }
+
+      // Check 30-day cooldown
+      const existingUser = await db.getUser(userId);
+      if (!existingUser) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      if (existingUser.school_updated_at) {
+        const lastChanged = new Date(existingUser.school_updated_at).getTime();
+        const now = Date.now();
+        const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+        if (now - lastChanged < thirtyDaysMs) {
+          const nextDate = new Date(lastChanged + thirtyDaysMs);
+          return NextResponse.json({
+            error: `You can only change your university/major once per month. Next available change: ${nextDate.toLocaleDateString()}.`,
+          }, { status: 429 });
+        }
+      }
+
+      // Resolve School
+      let finalSchoolId = schoolId;
+      if (schoolName && schoolName.trim().length > 0) {
+        const school = await db.createSchool(schoolName.trim());
+        finalSchoolId = school.id;
+      }
+
+      // Resolve Program
+      let finalProgramId = programId;
+      if (programName && programName.trim().length > 0 && finalSchoolId) {
+        const program = await db.createProgram(finalSchoolId, programName.trim());
+        finalProgramId = program.id;
+      }
+
+      const updates: Record<string, string | null> = {
+        school_updated_at: new Date().toISOString(),
+      };
+      if (finalSchoolId) updates.school_id = finalSchoolId;
+      if (finalProgramId) updates.program_id = finalProgramId;
+
+      const updatedUser = await db.updateUserProfile(userId, updates);
+      if (!updatedUser) {
+        return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, user: updatedUser });
+    }
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
     console.error("[POST /api/auth] Auth Error:", error);
