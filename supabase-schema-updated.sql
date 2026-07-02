@@ -1,0 +1,107 @@
+-- SQL Schema for student study planner
+-- Run this in your Supabase SQL Editor to initialize/update the tables.
+
+-- Table 1: Schools
+CREATE TABLE IF NOT EXISTS schools (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Table 2: Programs (Majors/Departments)
+CREATE TABLE IF NOT EXISTS programs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  UNIQUE(name, school_id)
+);
+
+-- Table 3: Courses
+CREATE TABLE IF NOT EXISTS courses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+  program_id UUID REFERENCES programs(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  course_code TEXT NOT NULL,
+  exam_date DATE,
+  target_score TEXT, -- "50%", "60%", "70%", "80%+"
+  daily_available_hours NUMERIC DEFAULT 2,
+  current_level TEXT, -- "weak", "average", "strong"
+  review_status TEXT DEFAULT 'Not Started', -- 'Not Started', 'In Progress', 'Ready'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Table 4: Materials
+CREATE TABLE IF NOT EXISTS materials (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  material_type TEXT NOT NULL, -- Homework, Quiz, Midterm, Final Exam, Lecture Notes, Practice Questions, Other
+  text TEXT NOT NULL, -- Extracted document text
+  size INTEGER, -- file size in bytes
+  word_count INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Table 5: Course Analyses (AI analysis caching)
+CREATE TABLE IF NOT EXISTS course_analyses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE UNIQUE NOT NULL,
+  summary TEXT,
+  extracted_topics JSONB,
+  topic_frequency JSONB,
+  predicted_exam_topics JSONB,
+  question_bank JSONB,
+  difficulty_breakdown JSONB,
+  last_analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  source_material_ids TEXT[] NOT NULL, -- Array of material IDs used for this analysis
+  analysis_version INTEGER DEFAULT 1 NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Table 6: Study Plans
+CREATE TABLE IF NOT EXISTS study_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE UNIQUE NOT NULL,
+  target_score TEXT NOT NULL,
+  days_remaining INTEGER NOT NULL,
+  daily_available_hours NUMERIC NOT NULL,
+  plan_json JSONB NOT NULL,
+  generated_from_analysis_version INTEGER NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Enable RLS and create public policies (or REST API bypass policies)
+ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_analyses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE study_plans ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public select on schools" ON schools FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on schools" ON schools FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public select on programs" ON programs FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on programs" ON programs FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public select on courses" ON courses FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on courses" ON courses FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on courses" ON courses FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete on courses" ON courses FOR DELETE USING (true);
+
+CREATE POLICY "Allow public select on materials" ON materials FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on materials" ON materials FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public delete on materials" ON materials FOR DELETE USING (true);
+
+CREATE POLICY "Allow public select on course_analyses" ON course_analyses FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on course_analyses" ON course_analyses FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on course_analyses" ON course_analyses FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public select on study_plans" ON study_plans FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on study_plans" ON study_plans FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on study_plans" ON study_plans FOR UPDATE USING (true);
