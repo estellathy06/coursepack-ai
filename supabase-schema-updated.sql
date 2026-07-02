@@ -1,6 +1,16 @@
 -- SQL Schema for student study planner
 -- Run this in your Supabase SQL Editor to initialize/update the tables.
 
+-- Table 0: Users (Authentication & Accounts)
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT, -- Nullable for Google OAuth
+  name TEXT NOT NULL,
+  avatar_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
 -- Table 1: Schools
 CREATE TABLE IF NOT EXISTS schools (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -76,12 +86,17 @@ CREATE TABLE IF NOT EXISTS study_plans (
 );
 
 -- Enable RLS and create public policies (or REST API bypass policies)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
 ALTER TABLE programs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_analyses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_plans ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public select on users" ON users FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on users" ON users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on users" ON users FOR UPDATE USING (true);
 
 CREATE POLICY "Allow public select on schools" ON schools FOR SELECT USING (true);
 CREATE POLICY "Allow public insert on schools" ON schools FOR INSERT WITH CHECK (true);

@@ -74,6 +74,15 @@ export interface StudyPlan {
   updated_at: string;
 }
 
+export interface UserAccount {
+  id: string;
+  email: string;
+  password_hash?: string;
+  name: string;
+  avatar_url?: string;
+  created_at: string;
+}
+
 // Database Helpers
 const getSupabaseConfig = () => {
   const url = process.env.SUPABASE_URL;
@@ -96,6 +105,7 @@ interface LocalDbSchema {
   materials: Material[];
   course_analyses: CourseAnalysis[];
   study_plans: StudyPlan[];
+  users: UserAccount[];
 }
 
 const initializeLocalDb = async (dbPath: string): Promise<LocalDbSchema> => {
@@ -106,6 +116,7 @@ const initializeLocalDb = async (dbPath: string): Promise<LocalDbSchema> => {
     materials: [],
     course_analyses: [],
     study_plans: [],
+    users: [],
   };
   try {
     await fs.mkdir(path.dirname(dbPath), { recursive: true });
@@ -134,6 +145,7 @@ const readLocalDb = async (): Promise<LocalDbSchema> => {
       materials: [],
       course_analyses: [],
       study_plans: [],
+      users: [],
     };
   }
 };
@@ -635,6 +647,156 @@ export const db = {
         await writeLocalDb(data);
         return newPlan;
       }
+    }
+  },
+
+  // Users
+  async registerUser(email: string, passwordHash: string, name: string): Promise<UserAccount> {
+    const config = getSupabaseConfig();
+    const timestamp = new Date().toISOString();
+    const trimmedEmail = email.trim().toLowerCase();
+    
+    if (config) {
+      try {
+        const checkRes = await supabaseFetch(`users?email=eq.${encodeURIComponent(trimmedEmail)}&select=*`);
+        const existing = await checkRes.json();
+        if (existing && existing.length > 0) {
+          throw new Error("Email already registered.");
+        }
+
+        const res = await supabaseFetch("users", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            password_hash: passwordHash,
+            name: name.trim(),
+          }),
+        });
+        const inserted = await res.json();
+        return inserted[0];
+      } catch (err: any) {
+        throw new Error(err.message || "Failed to register user in Supabase.");
+      }
+    } else {
+      const data = await readLocalDb();
+      if (!data.users) data.users = [];
+      const existing = data.users.find((u) => u.email.toLowerCase() === trimmedEmail);
+      if (existing) {
+        throw new Error("Email already registered.");
+      }
+
+      const newUser: UserAccount = {
+        id: crypto.randomUUID(),
+        email: trimmedEmail,
+        password_hash: passwordHash,
+        name: name.trim(),
+        created_at: timestamp,
+      };
+      data.users.push(newUser);
+      await writeLocalDb(data);
+      return newUser;
+    }
+  },
+
+  async loginUser(email: string, passwordHash: string): Promise<UserAccount | null> {
+    const config = getSupabaseConfig();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (config) {
+      try {
+        const res = await supabaseFetch(`users?email=eq.${encodeURIComponent(trimmedEmail)}&password_hash=eq.${encodeURIComponent(passwordHash)}&select=*`);
+        const list = await res.json();
+        return list && list.length > 0 ? list[0] : null;
+      } catch (err) {
+        console.error("Error authenticating against Supabase:", err);
+        return null;
+      }
+    } else {
+      const data = await readLocalDb();
+      if (!data.users) data.users = [];
+      const user = data.users.find(
+        (u) => u.email.toLowerCase() === trimmedEmail && u.password_hash === passwordHash
+      );
+      return user || null;
+    }
+  },
+
+  async getOrCreateGoogleUser(email: string, name: string, avatarUrl?: string): Promise<UserAccount> {
+    const config = getSupabaseConfig();
+    const timestamp = new Date().toISOString();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (config) {
+      try {
+        const checkRes = await supabaseFetch(`users?email=eq.${encodeURIComponent(trimmedEmail)}&select=*`);
+        const existing = await checkRes.json();
+        if (existing && existing.length > 0) {
+          const user = existing[0];
+          if (avatarUrl && user.avatar_url !== avatarUrl) {
+            await supabaseFetch(`users?id=eq.${user.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ avatar_url: avatarUrl }),
+            });
+            user.avatar_url = avatarUrl;
+          }
+          return user;
+        }
+
+        const res = await supabaseFetch("users", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            name: name.trim(),
+            avatar_url: avatarUrl,
+          }),
+        });
+        const inserted = await res.json();
+        return inserted[0];
+      } catch (err) {
+        console.error("Error managing Google user in Supabase:", err);
+      }
+    }
+
+    // Local DB fallback
+    const data = await readLocalDb();
+    if (!data.users) data.users = [];
+    const existing = data.users.find((u) => u.email.toLowerCase() === trimmedEmail);
+    if (existing) {
+      if (avatarUrl) existing.avatar_url = avatarUrl;
+      await writeLocalDb(data);
+      return existing;
+    }
+
+    const newUser: UserAccount = {
+      id: crypto.randomUUID(),
+      email: trimmedEmail,
+      name: name.trim(),
+      avatar_url: avatarUrl,
+      created_at: timestamp,
+    };
+    data.users.push(newUser);
+    await writeLocalDb(data);
+    return newUser;
+  },
+
+  async getUser(userId: string): Promise<UserAccount | null> {
+    const config = getSupabaseConfig();
+    if (config) {
+      try {
+        const res = await supabaseFetch(`users?id=eq.${userId}&select=*`);
+        const list = await res.json();
+        return list && list.length > 0 ? list[0] : null;
+      } catch (err) {
+        console.error("Error retrieving user from Supabase:", err);
+        return null;
+      }
+    } else {
+      const data = await readLocalDb();
+      if (!data.users) data.users = [];
+      const user = data.users.find((u) => u.id === userId);
+      return user || null;
     }
   },
 };
