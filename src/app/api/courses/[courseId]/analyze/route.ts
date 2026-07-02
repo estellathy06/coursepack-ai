@@ -167,16 +167,33 @@ export async function POST(
 ) {
   try {
     const { courseId } = await params;
-    const { userApiKey } = await req.json();
+    const { userApiKey, forceRegenerate } = await req.json().catch(() => ({}));
 
     if (!courseId) {
       return NextResponse.json({ error: "Missing courseId parameter" }, { status: 400 });
     }
 
-    // Load all course materials
+    // Load all course materials (which are shared across matching courses)
     const materials = await db.getMaterials(courseId);
     if (materials.length === 0) {
       return NextResponse.json({ error: "No course materials uploaded. Please upload syllabus or lecture notes first." }, { status: 400 });
+    }
+
+    // Check if an analysis already exists for matching courses with the same material IDs
+    const existingAnalysis = await db.getCourseAnalysis(courseId);
+    const currentMaterialIds = materials.map((m) => m.id);
+
+    if (existingAnalysis && !forceRegenerate) {
+      const cachedMaterialIds = existingAnalysis.source_material_ids || [];
+      const isUpToDate = currentMaterialIds.every((id) => cachedMaterialIds.includes(id)) &&
+                         cachedMaterialIds.every((id) => currentMaterialIds.includes(id));
+      
+      if (isUpToDate) {
+        console.log(`[Ingestion] Cache hit. Reusing existing analysis for course ${courseId}.`);
+        // Ensure this user's specific course status is updated to Ready too
+        await db.updateCourse(courseId, { review_status: "Ready" });
+        return NextResponse.json({ success: true, analysis: existingAnalysis });
+      }
     }
 
     // Get Course Code/Name for context
@@ -239,8 +256,7 @@ Generate a structured course analysis JSON according to the schema.`;
     const parsedJson = JSON.parse(responseText);
 
     // Save/Cache Analysis
-    // Get current analysis to increment version
-    const existingAnalysis = await db.getCourseAnalysis(courseId);
+    // Get current analysis to increment version (reusing pre-fetched existingAnalysis)
     const nextVersion = existingAnalysis ? existingAnalysis.analysis_version + 1 : 1;
 
     const savedAnalysis = await db.saveCourseAnalysis({

@@ -43,6 +43,7 @@ export interface Material {
   text: string;
   size?: number;
   word_count?: number;
+  hash?: string;
   created_at: string;
 }
 
@@ -669,6 +670,65 @@ export const db = {
       const data = await readLocalDb();
       const plan = data.study_plans.find((p) => p.course_id === courseId);
       return plan || null;
+    }
+  },
+
+  async getStudyPlansForCourses(courseIds: string[]): Promise<StudyPlan[]> {
+    if (courseIds.length === 0) return [];
+    const config = getSupabaseConfig();
+    if (config) {
+      try {
+        const res = await supabaseFetch(`study_plans?course_id=in.(${courseIds.join(",")})&select=*`);
+        return await res.json();
+      } catch (err) {
+        console.error("Error fetching study plans for course list from Supabase:", err);
+        return [];
+      }
+    } else {
+      const data = await readLocalDb();
+      return data.study_plans.filter((p) => courseIds.includes(p.course_id));
+    }
+  },
+
+  async getMatchingCourseIds(courseId: string): Promise<string[]> {
+    const currentCourse = await this.getCourse(courseId);
+    if (!currentCourse) return [];
+    const schoolId = currentCourse.school_id;
+    const programId = currentCourse.program_id;
+    const courseCode = currentCourse.course_code;
+
+    const config = getSupabaseConfig();
+    if (config) {
+      try {
+        let query = `courses?course_code=eq.${encodeURIComponent(courseCode)}`;
+        if (schoolId) {
+          query += `&school_id=eq.${schoolId}`;
+        } else {
+          query += `&school_id=is.null`;
+        }
+        if (programId) {
+          query += `&program_id=eq.${programId}`;
+        } else {
+          query += `&program_id=is.null`;
+        }
+
+        const res = await supabaseFetch(`${query}&select=id`);
+        const list = await res.json();
+        return list.map((c: any) => c.id);
+      } catch (err) {
+        console.error("Error getting matching course IDs from Supabase:", err);
+        return [courseId];
+      }
+    } else {
+      const data = await readLocalDb();
+      return data.courses
+        .filter(
+          (c) =>
+            c.course_code.toUpperCase() === courseCode.toUpperCase() &&
+            (c.school_id || null) === (schoolId || null) &&
+            (c.program_id || null) === (programId || null)
+        )
+        .map((c) => c.id);
     }
   },
 

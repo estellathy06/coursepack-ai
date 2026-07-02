@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/utils/db";
+import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +13,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Calculate SHA-256 hash of the content text
+    const hash = crypto.createHash("sha256").update(text).digest("hex");
+
+    // Fetch existing shared materials for this course to check for duplicates
+    const courseList = await db.getMaterials(courseId);
+    const isDuplicate = courseList.some((m) => m.hash === hash);
+
+    if (isDuplicate) {
+      console.log(`[Upload] Duplicate file detected for course ${courseId}. Skipping write.`);
+      return NextResponse.json(
+        { success: true, message: "File already uploaded for this course.", duplicate: true },
+        { status: 200 }
+      );
+    }
+
     const material = await db.createMaterial({
       course_id: courseId,
       name: name.trim(),
@@ -19,11 +35,11 @@ export async function POST(req: NextRequest) {
       text: text,
       size: Number(size) || 0,
       word_count: Number(wordCount) || 0,
+      hash: hash,
     });
 
     // Automatically update the course's review status if it was 'Not Started'
-    const courseList = await db.getMaterials(courseId);
-    if (courseList.length === 1) {
+    if (courseList.length === 0) {
       await db.updateCourse(courseId, { review_status: "In Progress" });
     }
 

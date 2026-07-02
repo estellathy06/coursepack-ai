@@ -82,17 +82,27 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // 2. Cache Check: Check if an identical plan has already been generated from this analysis version
-    const cachedPlan = await db.getStudyPlan(courseId);
-    if (
-      cachedPlan &&
-      !forceRegenerate &&
-      cachedPlan.target_score === targetScore &&
-      cachedPlan.days_remaining === Number(daysRemaining) &&
-      cachedPlan.daily_available_hours === Number(dailyAvailableHours) &&
-      cachedPlan.generated_from_analysis_version === analysis.analysis_version
-    ) {
-      console.log(`[Study Plan] Cache hit. Returning cached plan version ${analysis.analysis_version} for course ${courseId}`);
+    // 2. Cache Check: Check if a similar study plan is already cached across matching courses in the system
+    const matchingCourseIds = await db.getMatchingCourseIds(courseId);
+    const allPlans = await db.getStudyPlansForCourses(matchingCourseIds);
+
+    const cachedPlan = allPlans.find(
+      (p) =>
+        !forceRegenerate &&
+        p.target_score === targetScore &&
+        p.days_remaining === Number(daysRemaining) &&
+        p.daily_available_hours === Number(dailyAvailableHours) &&
+        p.generated_from_analysis_version === analysis.analysis_version
+    );
+
+    if (cachedPlan) {
+      console.log(`[Study Plan] Shared Cache hit. Returning cached plan version ${analysis.analysis_version} from course ${cachedPlan.course_id}`);
+      // Ensure target parameters are updated for this specific student's course
+      await db.updateCourse(courseId, {
+        target_score: targetScore,
+        daily_available_hours: Number(dailyAvailableHours),
+        current_level: currentLevel,
+      });
       return NextResponse.json({ success: true, plan: cachedPlan });
     }
 
@@ -107,7 +117,7 @@ export async function POST(
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-1.5-pro", // Token optimization: use stronger model for final strategic reasoning & study plan generation
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: studyPlanResponseSchema,

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS materials (
   text TEXT NOT NULL, -- Extracted document text
   size INTEGER, -- file size in bytes
   word_count INTEGER,
+  hash TEXT, -- SHA-256 hash of the content text for deduplication
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
