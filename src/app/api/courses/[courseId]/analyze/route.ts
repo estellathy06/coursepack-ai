@@ -43,9 +43,24 @@ const analysisResponseSchema: any = {
           likelyQuestion: { type: "string" },
           tips: { type: "string" },
           source: { type: "string" },
-          probabilityScore: { type: "integer" } // 0-100 prediction
+          probabilityScore: { type: "integer" }, // 0-100 prediction
+          predictionMethod: { type: "string" }, // "Probability-based" or "Gap-based"
+          mcQuestionsPercentage: { type: "integer" }, // 0-100
+          longAnswerQuestionsPercentage: { type: "integer" }, // 0-100
+          gapAnalysis: { type: "string" } // Detail for Gap-based method
         },
-        required: ["concept", "importance", "explanation", "likelyQuestion", "tips", "source", "probabilityScore"]
+        required: [
+          "concept",
+          "importance",
+          "explanation",
+          "likelyQuestion",
+          "tips",
+          "source",
+          "probabilityScore",
+          "predictionMethod",
+          "mcQuestionsPercentage",
+          "longAnswerQuestionsPercentage"
+        ]
       }
     },
     definitions: {
@@ -194,9 +209,14 @@ export async function POST(
 Your job is to read all uploaded materials for the course ${courseInfo.course_code || "GEN-101"}: "${courseInfo.name || "Current Course"}".
 Extract the structures, concepts, question banks, exam trends, and difficulties.
 BE CONSERVATIVE AND SOURCE-GROUNDED:
+- First, count and identify the total list of topics taught in the course during the semester.
+- Analyze past exams (if provided) and syllabus weights to determine what percentage of multiple-choice questions (mcQuestionsPercentage) and what percentage of long-answer questions (longAnswerQuestionsPercentage) came from each topic historically.
+- Predict likely exam content using TWO distinct methods:
+  1. "Probability-based" Prediction: Look at previous years' exams and count which topics or question types recur consistently. Rank them as high probability. Set predictionMethod to "Probability-based".
+  2. "Gap-based" Prediction: Compare topics taught in the lecture/syllabus with those in the practice exams. If a topic was taught during the semester but is omitted or absent in the practice exams, flag it. Set predictionMethod to "Gap-based" and explain this omission in "gapAnalysis" (e.g., "Taught in class, but omitted in practice exams").
 - Extract question examples directly from homeworks, quizzes, and previous exams.
 - Map the sources (e.g. "Lecture 2 Slides, p.5" or "Homework 3 Q2") in the 'source' or 'historicalSource' fields.
-- Estimate exam probability scores (0 to 100) based on weighted syllabus syllabus, homework weights, and key concepts.
+- Estimate exam probability scores (0 to 100) based on consistency, weight, or gap significance.
 - Classify question difficulties into Easy, Medium, Hard.
 - Provide a summary and prioritize topics by relevance.`;
 

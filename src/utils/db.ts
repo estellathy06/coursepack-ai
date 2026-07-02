@@ -333,13 +333,17 @@ export const db = {
       const res = await supabaseFetch(`courses?user_id=eq.${userId}&select=*&order=created_at.desc`);
       const courses: Course[] = await res.json();
 
-      // Retrieve schools & programs & materials to populate references (in REST API we do manual map or nested joins, since anonymous, we can do client side joins or get reference lists)
+      // Retrieve schools & programs & materials to populate references
       const schools = await this.getSchools();
       const programs = await this.getPrograms();
 
       // Also get material counts
       const matsRes = await supabaseFetch("materials?select=id,course_id");
       const matsList: { id: string; course_id: string }[] = await matsRes.json();
+
+      // Fetch all courses in the system to calculate shared material counts
+      const allCoursesRes = await supabaseFetch("courses?select=id,course_code,school_id,program_id");
+      const allCourses: Course[] = await allCoursesRes.json();
 
       // Also get generated study plans
       const plansRes = await supabaseFetch(`study_plans?user_id=eq.${userId}&select=course_id`);
@@ -348,7 +352,18 @@ export const db = {
       return courses.map((c) => {
         const sch = schools.find((s) => s.id === c.school_id);
         const prog = programs.find((p) => p.id === c.program_id);
-        const matCount = matsList.filter((m) => m.course_id === c.id).length;
+
+        // Find matching course IDs in the system to share materials count
+        const matchingIds = allCourses
+          .filter(
+            (ac) =>
+              ac.course_code.toUpperCase() === c.course_code.toUpperCase() &&
+              (ac.school_id || null) === (c.school_id || null) &&
+              (ac.program_id || null) === (c.program_id || null)
+          )
+          .map((ac) => ac.id);
+
+        const matCount = matsList.filter((m) => matchingIds.includes(m.course_id)).length;
         const planExists = plansList.some((p) => p.course_id === c.id);
 
         return {
@@ -366,7 +381,18 @@ export const db = {
       return userCourses.map((c) => {
         const sch = data.schools.find((s) => s.id === c.school_id);
         const prog = data.programs.find((p) => p.id === c.program_id);
-        const matCount = data.materials.filter((m) => m.course_id === c.id).length;
+
+        // Find matching course IDs in the system to share materials count
+        const matchingIds = data.courses
+          .filter(
+            (ac) =>
+              ac.course_code.toUpperCase() === c.course_code.toUpperCase() &&
+              (ac.school_id || null) === (c.school_id || null) &&
+              (ac.program_id || null) === (c.program_id || null)
+          )
+          .map((ac) => ac.id);
+
+        const matCount = data.materials.filter((m) => matchingIds.includes(m.course_id)).length;
         const planExists = data.study_plans.some((p) => p.course_id === c.id);
 
         return {
@@ -464,13 +490,51 @@ export const db = {
 
   // Materials
   async getMaterials(courseId: string): Promise<Material[]> {
+    const currentCourse = await this.getCourse(courseId);
+    if (!currentCourse) return [];
+
+    const schoolId = currentCourse.school_id;
+    const programId = currentCourse.program_id;
+    const courseCode = currentCourse.course_code;
+
     const config = getSupabaseConfig();
     if (config) {
-      const res = await supabaseFetch(`materials?course_id=eq.${courseId}&select=*&order=created_at.desc`);
-      return await res.json();
+      try {
+        // Find matching course IDs sharing same details
+        let query = `courses?course_code=eq.${encodeURIComponent(courseCode)}`;
+        if (schoolId) {
+          query += `&school_id=eq.${schoolId}`;
+        } else {
+          query += `&school_id=is.null`;
+        }
+        if (programId) {
+          query += `&program_id=eq.${programId}`;
+        } else {
+          query += `&program_id=is.null`;
+        }
+
+        const coursesRes = await supabaseFetch(`${query}&select=id`);
+        const matchingCourses: { id: string }[] = await coursesRes.json();
+        const courseIds = matchingCourses.map((c) => c.id);
+
+        if (courseIds.length === 0) return [];
+
+        const res = await supabaseFetch(`materials?course_id=in.(${courseIds.join(",")})&select=*&order=created_at.desc`);
+        return await res.json();
+      } catch (err) {
+        console.error("Error fetching shared materials from Supabase:", err);
+        return [];
+      }
     } else {
       const data = await readLocalDb();
-      return data.materials.filter((m) => m.course_id === courseId);
+      const matchingCourses = data.courses.filter(
+        (c) =>
+          c.course_code.toUpperCase() === courseCode.toUpperCase() &&
+          (c.school_id || null) === (schoolId || null) &&
+          (c.program_id || null) === (programId || null)
+      );
+      const courseIds = matchingCourses.map((c) => c.id);
+      return data.materials.filter((m) => courseIds.includes(m.course_id));
     }
   },
 

@@ -15,6 +15,10 @@ interface Topic {
   tips: string;
   source: string;
   probabilityScore: number;
+  predictionMethod?: "Probability-based" | "Gap-based";
+  mcQuestionsPercentage?: number;
+  longAnswerQuestionsPercentage?: number;
+  gapAnalysis?: string;
 }
 
 interface QuestionType {
@@ -163,11 +167,47 @@ export default function ExamPredictionSection({ analysis }: ExamPredictionSectio
                   </div>
                 </div>
 
-                {/* Expanded content */}
+                 {/* Expanded content */}
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-1.5 border-t border-slate-100 bg-slate-50/30 space-y-3.5 text-xs">
+                    
+                    {/* Method & Historical Weights */}
+                    <div className="flex flex-wrap items-center gap-4 py-2 border-b border-slate-100">
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block mb-0.5">Prediction Method</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
+                          topic.predictionMethod === 'Gap-based' 
+                            ? "bg-amber-100 text-amber-800 border-amber-200" 
+                            : "bg-blue-100 text-blue-800 border-blue-200"
+                        }`}>
+                          {topic.predictionMethod || 'Probability-based'}
+                        </span>
+                      </div>
+                      
+                      {topic.mcQuestionsPercentage !== undefined && topic.mcQuestionsPercentage !== null && (
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block mb-0.5">Historical MC Weight</span>
+                          <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{topic.mcQuestionsPercentage}% of MCs</span>
+                        </div>
+                      )}
+
+                      {topic.longAnswerQuestionsPercentage !== undefined && topic.longAnswerQuestionsPercentage !== null && (
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block mb-0.5">Historical Long-Answer Weight</span>
+                          <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{topic.longAnswerQuestionsPercentage}% of Long-Answers</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {topic.predictionMethod === 'Gap-based' && topic.gapAnalysis && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                        <span className="text-[9px] font-bold text-amber-700 uppercase tracking-wide block mb-1">Omission Gap Analysis</span>
+                        <p className="text-amber-900 leading-relaxed font-semibold">{topic.gapAnalysis}</p>
+                      </div>
+                    )}
+
                     <div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Why it is highly likely to be tested</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Why it is likely to be tested</span>
                       <p className="text-slate-650 leading-relaxed">{topic.explanation}</p>
                     </div>
 
